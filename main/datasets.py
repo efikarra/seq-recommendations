@@ -8,15 +8,15 @@ import os
 import pandas as pd
 import numpy as np
 
-def _read_data(data_dir,filename,delimiter=",",skipinitialspace=True):
+def _read_data(data_dir,filename,delimiter=","):
     data_path=os.path.join(data_dir, filename)
-    data_table=pd.read_csv(data_path, delimiter=delimiter, parse_dates=[0], skipinitialspace=skipinitialspace)
+    data_table=pd.read_csv(data_path, delimiter=delimiter, parse_dates=[0])
     return data_table
 def _group_sort_by_columns(data_table,group_col,sort_col):
     grouped_by_user=data_table.sort_values([group_col,sort_col], ascending=True).groupby([group_col])
     return grouped_by_user
 def _get_groups_as_lists(grouped_by_col,column):
-    grouped_data=grouped_by_col[column].apply(list).reset_index()[column].values
+    grouped_data=grouped_by_col[column].apply(list).values
     return grouped_data
 def _get_column_vocab(data_table,column):
     unique_pois=data_table[column].unique()
@@ -24,7 +24,6 @@ def _get_column_vocab(data_table,column):
 def _remove_short_sequences(data_table,group_col,seq_col,min_seq_length):
     clean_table=data_table[data_table.groupby([group_col])[seq_col].transform(len) > min_seq_length]
     return clean_table
-
 def _split_grouped_data(grouped_data,group_col,sort_col,column,train_percent=0.7,val_percent=0.3,test_percent=0.0):
     train_table=grouped_data.apply(_get_group_first_percentage,train_percent,column)
     val_test_table=grouped_data.apply(_get_group_last_percentage,val_percent+test_percent,column)
@@ -58,9 +57,7 @@ def _data_statistics(data_table,group_col,seq_col):
 def _build_sequences(data,group_col,seq_col,sort_col):
     grouped_by_user=_group_sort_by_columns(data,group_col=group_col,sort_col=sort_col) 
     flickr_seqs=_get_groups_as_lists(grouped_by_user,seq_col)
-    vocab=_get_column_vocab(data,seq_col)
     return flickr_seqs
-
 def _split_table_data(data,group_col,seq_col,sort_col,train_percent=0.7,val_percent=0.3,test_percent=0.0):
     """Split data into train, validation and test sequences. The validations/tests are taken from the end of each sequence.
         args:
@@ -76,8 +73,7 @@ def _split_table_data(data,group_col,seq_col,sort_col,train_percent=0.7,val_perc
     grouped_by_user=_group_sort_by_columns(data,group_col=group_col,sort_col=sort_col) 
     train_table,val_table,test_table=_split_grouped_data(grouped_by_user,group_col,sort_col,seq_col,train_percent,val_percent,test_percent=test_percent)
     return train_table,val_table,test_table
-    
-def _split_seq_data(sequences,vocab,train_percent=0.7,val_percent=0.3,test_percent=0.0):
+def split_seq_data(sequences,vocab,train_percent=0.7,val_percent=0.3,test_percent=0.0):
     assert train_percent+val_percent+test_percent == 1.0, "percents should sum to 1.0"
     train_seqs=[]
     val_seqs=[]
@@ -147,8 +143,6 @@ def build_flickr_sequences(flickr_data,xs=False):
     if xs:
         xs_total=build_xs(flickr_seqs, vocab)
     return flickr_seqs,vocab,xs_total
-def split_flickr_train_val_seqs(sequences,vocab,train_percent=0.7,val_percent=0.3,test_percent=0.0):
-    return _split_seq_data(sequences,vocab,train_percent=train_percent,val_percent=val_percent,test_percent=test_percent)
 def split_flickr_train_val_table(data,train_percent=0.7,val_percent=0.3,test_percent=0.0):
     train_table,val_table,test_table=_split_table_data(data,"userID","poiID","startTime",train_percent,val_percent,test_percent)
     return train_table,val_table,test_table

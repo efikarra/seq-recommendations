@@ -2,6 +2,7 @@
 @author: efi
 """
 import h5py
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 from keras.layers import Input, Activation
@@ -49,13 +50,15 @@ class BaseModel():
         plt.savefig(self.model_name + 'loss')
         plt.close()
 
-    def save_model_weights(self, filepath):
-        f = h5py.File(filepath + self.model_name + ".h5", 'w')
+    def save_model_weights(self, directory):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        f = h5py.File(directory + self.model_name + ".h5", 'w')
         weight = self.model.get_weights()
         for i in range(len(weight)):
             f.create_dataset('weight' + str(i), data=weight[i])
         f.close()
-        print("Saved model weights to disk: " + filepath + self.model_name)
+        print("Saved model weights to disk: " + directory + self.model_name)
 
     def load_model_weights(self, filepath):
         # workaround to load weights into new model

@@ -4,7 +4,7 @@ import datasets
 import sampler
 
 
-def run_baseline(seqs_train, seqs_val, xs_train, xs_val, vocab, pathtosave="trained_model/", filetoread=None):
+def run_baseline(seqs_train, seqs_val, xs_train, xs_val, vocab, dirtosave="trained_model/", filetoread=None):
     preprocessor = BaselinePreprocessor(vocab=vocab, pad_value=0., seq_length=None)
     x_train, y_train = preprocessor.transform_data(seqs_train, xs=xs_train)
     x_val, y_val = preprocessor.transform_data(seqs_val, xs=xs_val)
@@ -15,13 +15,13 @@ def run_baseline(seqs_train, seqs_val, xs_train, xs_val, vocab, pathtosave="trai
                            loss='categorical_crossentropy', metrics=[], z_activation="relu", z_dim=2)
     if not filetoread:
         baseline.fit_model(x_train, y_train, validation_data=(x_val, y_val), n_epochs=40, batch_size=10, verbose=1)
-        baseline.save_model_weights(pathtosave)
+        baseline.save_model_weights(dirtosave)
     else:
         baseline.load_model_weights(filetoread)
     #print baseline.get_layer_weights(2)
 
 
-def run_fullmodel(seqs_train, seqs_val, xs_train, xs_val, vocab, pathtosave="trained_model/", filetoread=None):
+def run_fullmodel(seqs_train, seqs_val, xs_train, xs_val, vocab, dirsave="trained_model/", filetoread=None):
     preprocessor = FullModelPreprocessor(vocab=vocab, pad_value=0., seq_length=None)
     x_train, y_train, train_xs = preprocessor.transform_data(seqs_train, xs=xs_train)
     x_val, y_val, val_xs = preprocessor.transform_data(seqs_val, xs=xs_val)
@@ -36,7 +36,7 @@ def run_fullmodel(seqs_train, seqs_val, xs_train, xs_val, vocab, pathtosave="tra
 
     if not filetoread:
         full_model.fit_model([x_train,train_xs], y_train, validation_data=([x_val,val_xs],y_val),n_epochs=20, batch_size=10, verbose=1)
-        full_model.save_model_weights(pathtosave)
+        full_model.save_model_weights(dirsave)
     else:
         full_model.load_model_weights(filetoread)
 # print baseline.get_layer_weights(2)

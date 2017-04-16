@@ -1,6 +1,8 @@
-Sequential Recommendations
+<h2> Sequential Recommendations </h2>
+
 Code for implementing RNN based models for sequential recommendation.
-Dependencies:
+
+<h2>Dependencies:</h2>
       
       1. keras
       2. theano

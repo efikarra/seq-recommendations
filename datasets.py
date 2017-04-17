@@ -206,3 +206,18 @@ def build_flickr_train_val_seqs(train_table, val_table, test_table):
     xs_test = build_xs(test_seqs, vocab)
     print "total test sequences:", len(test_seqs)
     return train_seqs, val_seqs, test_seqs, xs_train, xs_val, xs_test, vocab
+
+def load_msnbc_data():
+    """Loads MSNBC dataset.
+
+    Note: This data comes in the form of a list of sequences, so no
+    intermediary pandas df is generated.
+
+    returns:
+        seqs: A list of sequences.
+    """
+    with open('data/msnbc-data.txt', 'r') as f:
+        seqs = []
+        for line in f.readlines():
+            seqs.append(line.split())
+        return seqs

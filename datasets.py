@@ -216,8 +216,50 @@ def load_msnbc_data():
     returns:
         seqs: A list of sequences.
     """
+    seqs = []
     with open('data/msnbc-data.txt', 'r') as f:
-        seqs = []
-        for line in f.readlines():
+        for line in f:
             seqs.append(line.split())
         return seqs
+
+def load_gowalla_data(n_seq=None):
+    """Loads Gowalla dataset.
+
+    Note: This dataset is typically too large to store in memory. Use the
+    'n_seqs' parameters to work with a subset of the data.
+
+    args:
+        n_seq: Number of sequences to load.
+
+    returns:
+        seqs: A list of sequences.
+    """
+    vocab_id = 0
+    vocab = dict()
+
+    seqs = []
+    active_uid = None
+    seq_count = 0
+
+    with open('data/gowalla-data.txt', 'r') as f:
+        for line in f:
+            vals = line.split('\t')
+            uid, loc = vals[0], vals[-1]
+
+            if seq_count > n_seq:
+                break
+
+            elif uid != active_uid:
+                try:
+                    seqs.append(active_seq)
+                except UnboundLocalError:
+                    pass
+                active_seq = []
+                active_uid = uid
+                seq_count += 1
+            if loc not in vocab:
+                vocab[loc] = vocab_id
+                vocab_id += 1
+            active_seq.append(vocab[loc])
+    return seqs, vocab_id
+

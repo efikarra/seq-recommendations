@@ -24,11 +24,12 @@ def prepare_fullmodel_input_data(seqs_train, seqs_val, xs_train, xs_val, vocab, 
 def create_fullmodel(timesteps, x_dim, y_dim, z_dim=10, model_name="full_model", rnn_type='simpleRNN',
                      z_to_z_activation="relu",
                      y_to_y_activation="linear", y_bias=False, z_bias=True, xz_bias=False, y_to_y_trainable=True,
-                     y_to_y_weights=None):
+                     y_to_y_weights=None, x_to_y=False):
     # initialize model
     full_model = RNNY2YModel(timesteps=timesteps, x_dim=x_dim, y_dim=y_dim, z_dim=z_dim,
                              model_name=model_name, rnn_type=rnn_type, z_to_z_activation=z_to_z_activation,
-                             y_to_y_activation=y_to_y_activation, y_bias=y_bias, z_bias=z_bias, xz_bias=xz_bias)
+                             y_to_y_activation=y_to_y_activation, y_bias=y_bias, z_bias=z_bias, xz_bias=xz_bias,
+                             x_to_y=x_to_y)
     # set non trainable weights
     full_model.set_layer_weights_trainable("y_to_y_output", trainable=y_to_y_trainable)
     print "full model summary:"
@@ -53,31 +54,28 @@ def prepare_baseline_input_data(seqs_train, seqs_val, xs_train, xs_val, vocab):
 # print baseline.get_layer_weights(2)
 
 def run_model(model, x_train, y_train, x_val, y_val, loss='categorical_crossentropy', metrics=[], optimizer='adam',
-              n_epochs=20, batch_size=10, verbose=1, dir_save="trained_model/",
+              n_epochs=20, batch_size=10, verbose=1, dir_save="trained_models/",
               read_file=None):
+    history=None
     if not read_file:
-        history=model.fit_model(x_train, y_train, validation_data=(x_val, y_val), loss=loss, metrics=metrics,
-                        optimizer=optimizer, n_epochs=n_epochs, plot_history=True,
-                        batch_size=batch_size, verbose=verbose)
+        history = model.fit_model(x_train, y_train, validation_data=(x_val, y_val), loss=loss, metrics=metrics,
+                                  optimizer=optimizer, n_epochs=n_epochs, plot_history=True,
+                                  batch_size=batch_size, verbose=verbose)
         model.save_model_weights(dir_save)
     else:
         model.load_model_weights(read_file)
-    val_losses = []
-    train_losses = []
-    for key, value in history.history.items():
-        if key == "val_loss":
-            val_losses = value
-        if key == "loss":
-            train_losses = value
+    if history:
+        val_losses = []
+        train_losses = []
+        for key, value in history.history.items():
+            if key == "val_loss":
+                val_losses = value
+            if key == "loss":
+                train_losses = value
 
-    print "min val loss: %f at epoch: %d"%(np.min(val_losses),np.argmin(val_losses))
-    print "train loss: %f at epoch: %d"%(train_losses[np.argmin(val_losses)],np.argmin(val_losses))
+        print "min val loss: %f at epoch: %d" % (np.min(val_losses), np.argmin(val_losses))
+        print "train loss: %f at epoch: %d" % (train_losses[np.argmin(val_losses)], np.argmin(val_losses))
     return history
-
-def inspect_weights(model, layer_names):
-    for name in layer_names:
-        print model.get_layer_weights(name)
-
 
 if __name__ == "__main__":
     flickr_df = datasets.load_flickr_data()
@@ -86,27 +84,43 @@ if __name__ == "__main__":
 
     train_table, val_table, test_table = datasets.split_flickr_train_val_df(flickr_df, train=0.7, val=0.3,
                                                                             test=0.0)
-    seqs_train, seqs_val, seqs_test, xs_train, xs_val, xs_test, vocab = datasets.build_flickr_train_val_seqs(train_table, val_table, test_table)
+    print datasets.flickr_table_statistics(train_table)
+    print datasets.flickr_table_statistics(val_table)
+    seqs_train, seqs_val, seqs_test, xs_train, xs_val, xs_test, vocab = datasets.build_flickr_train_val_seqs(
+        train_table, val_table, test_table)
     alpha, gamma = sampler.transition_matrix(seqs_train, vocab, k=1.0, end_state=False)
-
-    # for baseline model: prepare data, create model and run
-    x_train, y_train, x_val, y_val = prepare_baseline_input_data(seqs_train, seqs_val, xs_train=xs_train, xs_val=xs_val, vocab=vocab)
-    baseline = create_baseline(timesteps=x_train.shape[1], features=x_train.shape[2], n_classes=len(vocab),
-                               model_name="baseline_model_with_xs", rnn_type='LSTM', z_activation="relu", z_dim=10)
-    history=run_model(baseline, x_train, y_train, x_val, y_val, loss='categorical_crossentropy', metrics=[], optimizer='adam', n_epochs=50, batch_size=10, verbose=1, dir_save="trained_model/",
-              read_file=None)
+    #
+    # # for baseline model: prepare data, create model and run
+    # x_train, y_train, x_val, y_val = prepare_baseline_input_data(seqs_train, seqs_val, xs_train=xs_train, xs_val=xs_val, vocab=vocab)
+    # baseline = create_baseline(timesteps=x_train.shape[1], features=x_train.shape[2], n_classes=len(vocab),
+    #                            model_name="baseline_model_with_xs", rnn_type='LSTM', z_activation="relu", z_dim=10)
+    # history=run_model(baseline, x_train, y_train, x_val, y_val, loss='categorical_crossentropy', metrics=[], optimizer='adam', n_epochs=50, batch_size=10, verbose=1,
+    #           read_file=None)
 
     # for full model: prepare data, create model and run
-    # x_train, y_train, train_xs, x_val, y_val, val_xs = prepare_fullmodel_input_data(seqs_train, seqs_val, xs_train,
-    #                                                                                 xs_val, vocab, full_model=True)
-    # y_to_y_trainable = True
-    # y_to_y_weights = [np.reshape(alpha, (len(alpha), len(alpha)))]
-    # y_to_y_weights=None
-    # full_model = create_fullmodel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=10, rnn_type='LSTM',z_to_z_activation="relu",
-    #                               y_to_y_activation="linear", y_bias=False, z_bias=True, xz_bias=False, y_to_y_trainable=y_to_y_trainable, y_to_y_weights=None)
+    x_train, y_train, train_xs, x_val, y_val, val_xs = prepare_fullmodel_input_data(seqs_train, seqs_val, xs_train,
+                                                                                    xs_val, vocab, full_model=True)
+    y_to_y_trainable = True
+    #y_to_y_weights = [np.reshape(alpha, (len(alpha), len(alpha)))]
+    y_to_y_weights=None
+    #read_file="trained_models/full_model_fixed_trans_probs.h5"
+    read_file = "trained_models/full_model_full_weights.h5"
+    #read_file = "trained_models/full_model_trainable_trans_probs.h5"
 
-    # run_model(full_model, [x_train, train_xs], y_train, [x_val, val_xs], y_val, n_epochs=50, batch_size=10, verbose=1,
-    #           dir_save="trained_model/", read_file=None)
+    #read_file=None
+    full_model = create_fullmodel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=10,
+                                  rnn_type='LSTM', z_to_z_activation="relu",
+                                  y_to_y_activation="linear", y_bias=False, z_bias=True, xz_bias=False,
+                                  y_to_y_trainable=y_to_y_trainable, y_to_y_weights=y_to_y_weights, x_to_y=True)
 
-    # y_to_y_weights = full_model.get_layer_weights("y_to_y_output")
+    run_model(full_model, [x_train, train_xs], y_train, [x_val, val_xs], y_val, n_epochs=50, batch_size=10, verbose=1,
+              dir_save="trained_models/", read_file=read_file)
+
+    y_to_y_weights = full_model.get_layer_weights("y_to_y_output")
     # xz_weights= full_model.get_layer_weights("xz_to_y_output")
+    with open('alpha.csv', 'wb') as f:
+        np.savetxt(f,alpha, delimiter=',', fmt='%.3f')
+    with open('weights_y_to_y.csv', 'wb') as f:
+        np.savetxt(f, y_to_y_weights[0], delimiter=',', fmt='%.3f')
+    print y_to_y_weights
+    print np.isclose(y_to_y_weights,alpha)

@@ -110,7 +110,7 @@ class MCSampler(SequenceSampler):
         self.prev = None
 
 
-def transition_matrix(seqs, vocab, k=0):
+def transition_matrix(seqs, vocab, k=0, end_state=True):
     """Learn global Markov transition matrix from sequences
 
     Args:
@@ -122,16 +122,21 @@ def transition_matrix(seqs, vocab, k=0):
         T: Transition matrix in the form of an np.array.
     """
     n = len(vocab)
-    alpha = np.zeros((n, n + 1))  # Note: +1 for end_token
+    if end_state:
+        alpha = np.zeros((n, n + 1))  # Note: +1 for end_token
+    else:
+        alpha = np.zeros((n, n))
     gamma = np.zeros(n)
     # Fill with counts
     for seq in seqs:
         if len(seq) > 1:
             for i, j in zip(seq[:-1], seq[1:]):
                 alpha[i, j] = alpha[i, j] + 1
-            alpha[j, n] = alpha[j, n] + 1
+            if end_state:
+                alpha[j, n] = alpha[j, n] + 1
         else:
-            alpha[seq[0], n] = alpha[seq[0], n] + 1
+            if end_state:
+                alpha[seq[0], n] = alpha[seq[0], n] + 1
         gamma[seq[0]] = gamma[seq[0]] + 1
     # Normalize
     z = np.sum(alpha, axis=1).reshape((n, 1))
@@ -141,7 +146,18 @@ def transition_matrix(seqs, vocab, k=0):
 
 
 if __name__ == '__main__':
-    seqs = [[0, 1], [1, 0]]
-    vocab = {0: 0, 1: 1}
-    alpha, gamma = transition_matrix(seqs, vocab)
-    print alpha
+    import datasets
+    k = 0.0
+    beta = 0.0
+
+    # Load sequence data
+    flickr_df = datasets.load_flickr_data()
+    seqs, vocab,_ = datasets.build_flickr_seqs(flickr_df)
+    alpha, gamma = transition_matrix(seqs, vocab, k, end_state=False)
+
+    # Initialize sampler
+    #sampler = MCSampler(alpha, gamma, beta)
+    # Draw test samples
+    #print 'Generating test sequences'
+    #for _ in xrange(10):
+     #   print sampler.gen_sequence()

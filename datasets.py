@@ -137,7 +137,7 @@ def build_xs(sequences, vocab):
 
 def load_flickr_data():
     """Load Flickr dataset.
-        returns: 
+        returns:
             data_table: pandas DataFrame.
             stats: pandas DataFrame with dataset statistics
         """
@@ -153,7 +153,7 @@ def flickr_table_statistics(df):
     """Get basic statistics for flickr sequences.
         args:
             data_table: pandas DataFrame.
-        returns: 
+        returns:
             stats: pandas DataFrame with dataset statistics
         """
     return data_statistics(df, "userID", "poiID")
@@ -164,7 +164,7 @@ def build_flickr_seqs(flickr_df, xs=False):
         args:
             flickr_data: pandas DataFrame.
             xs: bool. True if you want the x's of the sequences
-        returns: 
+        returns:
             flickr_seqs: list of lists. sequences.
             vocab: dict. vocabulary of locations
             xs_total: list of lists. x's.
@@ -207,6 +207,7 @@ def build_flickr_train_val_seqs(train_table, val_table, test_table):
     print "total test sequences:", len(test_seqs)
     return train_seqs, val_seqs, test_seqs, xs_train, xs_val, xs_test, vocab
 
+
 def load_msnbc_data():
     """Loads MSNBC dataset.
 
@@ -216,13 +217,25 @@ def load_msnbc_data():
     returns:
         seqs: A list of sequences.
     """
+    vocab_id = 0
+    vocab = dict()
+
     seqs = []
     with open('data/msnbc-data.txt', 'r') as f:
-        for line in f:
-            seqs.append(line.split())
-        return seqs
+        for i, line in enumerate(f):
+            if i>7: 
+                seq = []
+                vals = line.split()
+                for val in vals:
+                    if val not in vocab:
+                        vocab[val] = vocab_id
+                        vocab_id += 1
+                    seq.append(vocab[val])
+                seqs.append(seq)
+        return seqs, vocab
 
-def load_gowalla_data(n_seq=None):
+
+def load_gowalla_data(n_seq=None, bounding_box=None):
     """Loads Gowalla dataset.
 
     Note: This dataset is typically too large to store in memory. Use the
@@ -230,6 +243,7 @@ def load_gowalla_data(n_seq=None):
 
     args:
         n_seq: Number of sequences to load.
+        bounding_box: Bounding box for lat/long coordinates.
 
     returns:
         seqs: A list of sequences.
@@ -241,25 +255,40 @@ def load_gowalla_data(n_seq=None):
     active_uid = None
     seq_count = 0
 
+    if bounding_box is None:
+        contained = True
+
     with open('data/gowalla-data.txt', 'r') as f:
         for line in f:
+            # Parse data
             vals = line.split('\t')
             uid, loc = vals[0], vals[-1]
+            lat, lon = float(vals[2]), float(vals[3])
 
+            # Check if enough data has been read
             if seq_count > n_seq:
                 break
 
-            elif uid != active_uid:
-                try:
-                    seqs.append(active_seq)
-                except UnboundLocalError:
-                    pass
-                active_seq = []
-                active_uid = uid
-                seq_count += 1
-            if loc not in vocab:
-                vocab[loc] = vocab_id
-                vocab_id += 1
-            active_seq.append(vocab[loc])
-    return seqs, vocab_id
+            # Handle bounding boxes
+            if bounding_box is not None:
+                contained_lat = (bounding_box.lat[0] < lat) and (lat < bounding_box.lat[1])
+                contained_lon = (bounding_box.lon[0] < lon) and (lon < bounding_box.lon[1])
+                contained = contained_lat and contained_lon
+
+            # Add data to sequence
+            if contained:
+                if uid != active_uid: # New user logic
+                    try:
+                        seqs.append(active_seq)
+                    except UnboundLocalError:
+                        pass
+                    active_seq = []
+                    active_uid = uid
+                    seq_count += 1
+                if loc not in vocab:
+                    vocab[loc] = vocab_id
+                    vocab_id += 1
+                active_seq.append(vocab[loc])
+
+    return seqs, vocab
 

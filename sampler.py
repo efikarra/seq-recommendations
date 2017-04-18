@@ -12,12 +12,23 @@ import random
 class SequenceSampler(object):
     """Object for generating sequences from a probabilistic model"""
 
-    def gen_sequence(self):
-        """Generate sequences"""
+    def gen_sequence(self, n=None):
+        """Generate sequences
+
+        args:
+            n: int. If not using end token, then this is the length of the
+                sequence to return.
+        
+        """
         self.reset()
-        sequence = list(
-            itertools.takewhile(lambda x: x != self.end_token, self.gen_sample())
-        )
+        if self.use_end_token:
+            sequence = list(
+                itertools.takewhile(lambda x: x != self.end_token, self.gen_sample())
+            )
+        else:
+            assert n > 0, "ERROR: Must specify sequence length if not using an end token"
+            generator = self.gen_sample()
+            sequence = list(next(generator) for _ in xrange(n))
         return sequence
 
     def gen_sample(self):
@@ -35,34 +46,46 @@ class MCSampler(SequenceSampler):
     Note: n-th state always considered to be an end state.
     """
 
-    def __init__(self, alpha, gamma, beta=1):
+    def __init__(self, alpha, gamma, beta=1, use_end_token=True):
         """Initialize model with predefined parameters
 
         args:
             alpha: np.array. Transition probabilities.
             gamma: np.array. Initial value probabilities.
             beta: float. Decay constant.
+            use_end_token: bool. If True then an end token is used to stop
+                sequence generation. 
         """
         assert alpha.ndim == 2, "ERROR: alpha not a matrix"
-        assert alpha.shape[0] == alpha.shape[1] - 1, "ERROR: alpha not square"
+        if use_end_token:
+            assert alpha.shape[0] == alpha.shape[1] - 1, "ERROR: alpha not square"
+        else:
+            assert alpha.shape[0] == alpha.shape[1], "ERROR: alpha not square"
         assert alpha.shape[0] == gamma.shape[0], "ERROR: incompatible alpha and gamma"
         assert 0 <= beta, "ERROR: beta must be non-negative"
 
         self.alpha = alpha
         self.gamma = gamma
         self.beta = beta
-        self.end_token = alpha.shape[0]
+        self.use_end_token = use_end_token
+
+        if use_end_token:
+            self.end_token = alpha.shape[0]
+        else:
+            self.end_token = None
+
         self.prev = None
 
     @classmethod
-    def random_init(cls, n, zero_diag=True, beta=1):
+    def random_init(cls, n, zero_diag=True, **kwargs):
         """Randomly initialize model parameters
 
         args:
             n: int. Number of states.
             zero_diag: bool. True if diagonal elements of transition matrix are
                 forced to be zero (e.g. states do not repeat)
-            beta: float. Decay constant.
+
+            see __init__ method for other args.
         """
         gamma = np.random.rand(n)
         gamma[n - 1] = 0
@@ -74,7 +97,7 @@ class MCSampler(SequenceSampler):
         z = np.sum(alpha, axis=1).reshape((n, 1))
         alpha = alpha / z
 
-        return cls(alpha, gamma)
+        return cls(alpha, gamma, **kwargs)
 
     def gen_sample(self):
         while True:
@@ -95,7 +118,8 @@ class MCSampler(SequenceSampler):
     def decay(self, alpha, sample):
         alpha[:, sample] = self.beta * alpha[:, sample]
         z = np.sum(alpha, axis=1).reshape((alpha.shape[0], 1))
-        # BEGIN STUPID HACK
+        # BEGIN STUPID HACK - NOTE: This will cause issues if not using an end
+        # token
         bad_inds = z == 0.
         if np.sum(bad_inds) > 0:
             bad_inds = bad_inds.reshape((alpha.shape[0]))
@@ -110,13 +134,16 @@ class MCSampler(SequenceSampler):
         self.prev = None
 
 
-def transition_matrix(seqs, vocab, k=0, end_state=True):
+def transition_matrix(seqs, vocab, k=0, freq=False, end_state=True):
     """Learn global Markov transition matrix from sequences
 
     Args:
         seqs: Contains sequences to learn from.
         vocab: Words in sequences.
         k: Smoothing parameter from Dirchlet prior.
+        prob: If True then matrix returned is transition probabilities,
+            otherwise transition counts are returned.
+        end_state: If True then adds a token for the end state.
 
     Returns:
         T: Transition matrix in the form of an np.array.
@@ -138,26 +165,16 @@ def transition_matrix(seqs, vocab, k=0, end_state=True):
             if end_state:
                 alpha[seq[0], n] = alpha[seq[0], n] + 1
         gamma[seq[0]] = gamma[seq[0]] + 1
-    # Normalize
-    z = np.sum(alpha, axis=1).reshape((n, 1))
-    alpha = (alpha + k) / (z + n * k)
-    gamma = gamma / np.sum(gamma)
+    if freq:
+        z = np.sum(alpha, axis=1).reshape((n, 1))
+        alpha = (alpha + k) / (z + n * k)
+        gamma = gamma / np.sum(gamma)
     return alpha, gamma
 
 
 if __name__ == '__main__':
-    import datasets
-    k = 0.0
-    beta = 0.0
+    # See that sampler works without end tokens
+    sampler = MCSampler.random_init(100, beta=0, use_end_token=False)
 
-    # Load sequence data
-    flickr_df = datasets.load_flickr_data()
-    seqs, vocab,_ = datasets.build_flickr_seqs(flickr_df)
-    alpha, gamma = transition_matrix(seqs, vocab, k, end_state=False)
-
-    # Initialize sampler
-    #sampler = MCSampler(alpha, gamma, beta)
-    # Draw test samples
-    #print 'Generating test sequences'
-    #for _ in xrange(10):
-     #   print sampler.gen_sequence()
+    for _ in xrange(10):
+        print sampler.gen_sequence(n=100)

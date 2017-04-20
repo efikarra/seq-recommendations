@@ -292,3 +292,44 @@ def load_gowalla_data(n_seq=None, bounding_box=None):
 
     return seqs, vocab
 
+
+# TODO: Finish gap handling.
+def load_student_data(session_gap=30):
+    """Loads student activity dataset.
+
+    args:
+        session_gap: Duration of time (in minutes) elapsed between events to
+            consider next event start of a new sequence.
+
+    returns:
+        seqs, vocab
+    """
+    import datetime
+
+    vocab_id = 1
+    vocab = {'New Session': 0}
+
+    seqs = []
+    active_uid = None
+
+    with open('data/student-data.txt', 'r') as f:
+        for line in f:
+            # Parse data
+            vals = line.split(',')
+            uid, dt, ts, token = vals
+
+            if uid != active_uid: # New user logic
+                try:
+                    seqs.append(active_seq)
+                except UnboundLocalError:
+                    pass
+                active_seq = []
+                active_uid = uid
+
+            if token not in vocab:
+                vocab[token] = vocab_id
+                vocab_id += 1
+            active_seq.append[vocab[token]]
+
+    return seqs, vocab
+

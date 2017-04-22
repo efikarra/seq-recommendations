@@ -345,7 +345,7 @@ def load_student_data(gap_thresh=30):
 
 def load_reddit_data(eliminate_repeats=False):
     import os
-    top = 'data/reddit/'
+    top = 'data/reddit-data/'
 
     vocab_id = 0
     vocab = dict()
@@ -375,6 +375,3 @@ def load_reddit_data(eliminate_repeats=False):
 
     return seqs, vocab
 
-
-if __name__ == '__main__':
-    seqs, vocab = load_reddit_data()

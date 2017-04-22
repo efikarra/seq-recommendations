@@ -293,7 +293,6 @@ def load_gowalla_data(n_seq=None, bounding_box=None):
     return seqs, vocab
 
 
-# TODO: Finish gap handling.
 def load_student_data(gap_thresh=30):
     """Loads student activity dataset.
 
@@ -343,3 +342,39 @@ def load_student_data(gap_thresh=30):
 
     return seqs, vocab
 
+
+def load_reddit_data(eliminate_repeats=False):
+    import os
+    top = 'data/reddit/'
+
+    vocab_id = 0
+    vocab = dict()
+
+    seqs = []
+
+    for root, dirs, files in os.walk(top):
+        for fname in files: # Each fname is a new user
+            prev_token = None
+            seq = []
+            with open(root+fname, 'r') as f:
+                for line in f:
+                    vals = line.split(',')
+                    token = vals[0]
+
+                    if eliminate_repeats:
+                        if token == prev_token:
+                            continue
+
+                    if token not in vocab:
+                        vocab[token] = vocab_id
+                        vocab_id += 1
+
+                    seq.append(vocab[token])
+                    prev_token = token
+            seqs.append(seq)
+
+    return seqs, vocab
+
+
+if __name__ == '__main__':
+    seqs, vocab = load_reddit_data()

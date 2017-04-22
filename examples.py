@@ -60,5 +60,25 @@ gowalla_data, vocab = load_gowalla_data(n_seq=10000, bounding_box=austin_bounds)
 print "Dataset size:", len(gowalla_data)
 print "Vocab size:", len(vocab)
 print "Avg sequence length:", sum(map(lambda x: len(x), gowalla_data)) / len(gowalla_data)
+
+### Student
+print
+print "--- Loading Student data ---"
+
+student_data, vocab = load_student_data()
+
+def split_gaps(seqs):
+    import itertools
+    for seq in seqs:
+        split = [list(g) for k,g in itertools.groupby(seq, lambda x: x==0) if not k]
+        for subseq in split:
+            yield(subseq)
+
+split_student_data = list(split_gaps(student_data))
+
+print "Dataset size:", len(student_data)
+print "Vocab size:", len(vocab)
+print "Avg sequence length (not breaking on gaps):", sum(map(lambda x: len(x), student_data)) / len(student_data)
+print "Avg sequence length (breaking on gaps):", sum(map(lambda x: len(x), split_student_data)) / len(split_student_data)
 print
 

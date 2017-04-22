@@ -60,10 +60,3 @@ if __name__ == '__main__':
         download_zip(url, fname, destfile)
         print 'Download complete\n'
 
-    if 'lastfm' in args.dataset:
-        print 'Downloading lastfm dataset'
-        url = 'http://mtg.upf.edu/static/datasets/last.fm/lastfm-dataset-1K.tar.gz'
-        destfile = 'data/lastfm-data.csv'
-        download_gz(url, destfile)
-        print 'Download complete\n'
-

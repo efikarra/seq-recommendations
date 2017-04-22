@@ -294,20 +294,20 @@ def load_gowalla_data(n_seq=None, bounding_box=None):
 
 
 # TODO: Finish gap handling.
-def load_student_data(session_gap=30):
+def load_student_data(gap_thresh=30):
     """Loads student activity dataset.
 
     args:
-        session_gap: Duration of time (in minutes) elapsed between events to
+        gap_thresh: Duration of time (in minutes) elapsed between events to
             consider next event start of a new sequence.
 
     returns:
         seqs, vocab
     """
-    import datetime
+    from dateutil.parser import parse
 
     vocab_id = 1
-    vocab = {'New Session': 0}
+    vocab = {'gap': 0} # 0 is the gap token
 
     seqs = []
     active_uid = None
@@ -315,8 +315,10 @@ def load_student_data(session_gap=30):
     with open('data/student-data.txt', 'r') as f:
         for line in f:
             # Parse data
+            line = line.rstrip('\r\n')
             vals = line.split(',')
             uid, dt, ts, token = vals
+            curr_datetime = parse(dt+'T'+ts+'Z')
 
             if uid != active_uid: # New user logic
                 try:
@@ -325,11 +327,19 @@ def load_student_data(session_gap=30):
                     pass
                 active_seq = []
                 active_uid = uid
+                prev_datetime = curr_datetime
+
+            # Handle gaps
+            time_diff = (curr_datetime - prev_datetime).seconds / 60
+            if time_diff > gap_thresh:
+                active_seq.append(vocab['gap'])
 
             if token not in vocab:
                 vocab[token] = vocab_id
                 vocab_id += 1
-            active_seq.append[vocab[token]]
+
+            active_seq.append(vocab[token])
+            prev_datetime = curr_datetime
 
     return seqs, vocab
 

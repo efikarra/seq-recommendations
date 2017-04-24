@@ -42,6 +42,13 @@ if __name__ == '__main__':
 
     print ''
 
+    if 'flickr' in args.dataset:
+        print 'Downloading Flickr dataset'
+        url = 'https://raw.githubusercontent.com/arongdari/flickr-photo/master/data/traj-noloop-all-Melb.csv'
+        destfile = 'data/flickr-data.csv'
+        urllib.urlretrieve(url, destfile)
+        print 'Download complete\n'
+
     if 'gowalla' in args.dataset:
         print 'Downloading Gowalla dataset'
         url = 'https://snap.stanford.edu/data/loc-gowalla_totalCheckins.txt.gz'

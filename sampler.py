@@ -7,7 +7,7 @@ Tools for generating sequences from a probabilistic model
 import itertools
 import numpy as np
 import random
-
+import utils
 
 class SequenceSampler(object):
     """Object for generating sequences from a probabilistic model"""
@@ -134,47 +134,9 @@ class MCSampler(SequenceSampler):
         self.prev = None
 
 
-def transition_matrix(seqs, vocab, k=0, freq=False, end_state=True):
-    """Learn global Markov transition matrix from sequences
-
-    Args:
-        seqs: Contains sequences to learn from.
-        vocab: Words in sequences.
-        k: Smoothing parameter from Dirchlet prior.
-        prob: If True then matrix returned is transition probabilities,
-            otherwise transition counts are returned.
-        end_state: If True then adds a token for the end state.
-
-    Returns:
-        T: Transition matrix in the form of an np.array.
-    """
-    n = len(vocab)
-    if end_state:
-        alpha = np.zeros((n, n + 1))  # Note: +1 for end_token
-    else:
-        alpha = np.zeros((n, n))
-    gamma = np.zeros(n)
-    # Fill with counts
-    for seq in seqs:
-        if len(seq) > 1:
-            for i, j in zip(seq[:-1], seq[1:]):
-                alpha[i, j] = alpha[i, j] + 1
-            if end_state:
-                alpha[j, n] = alpha[j, n] + 1
-        else:
-            if end_state:
-                alpha[seq[0], n] = alpha[seq[0], n] + 1
-        gamma[seq[0]] = gamma[seq[0]] + 1
-    if freq:
-        z = np.sum(alpha, axis=1).reshape((n, 1))
-        alpha = (alpha + k) / (z + n * k)
-        gamma = gamma / np.sum(gamma)
-    return alpha, gamma
-
-
 if __name__ == '__main__':
     # See that sampler works without end tokens
-    sampler = MCSampler.random_init(100, beta=0, use_end_token=False)
+    sampler = MCSampler.random_init(100, beta=1, use_end_token=True)
 
     for _ in xrange(10):
         print sampler.gen_sequence(n=100)

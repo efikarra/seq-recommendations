@@ -137,7 +137,7 @@ def run_model_no_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs, vo
                             orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
                             n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
                             early_stopping=early_stopping, wrt_time=wrt_time)
-        results = analyze_history(history, model.model_name)
+        results = analyze_history(history)
     return model, results
 
 
@@ -186,6 +186,6 @@ def run_model_with_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs,
                             orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
                             n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
                             early_stopping=early_stopping, wrt_time=wrt_time)
-        results = analyze_history(history, model.model_name)
+        results = analyze_history(history)
 
     return model, results

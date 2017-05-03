@@ -79,3 +79,11 @@ if __name__ == '__main__':
         download_zip(url, fname, dest, folder=True)
         print 'Download complete\n'
 
+    if 'switchboard' in args.dataset:
+        print 'Downloading switchboard dataset'
+        url = 'http://compprag.christopherpotts.net/code-data/swda.zip'
+        fname = None
+        dest = 'data/'
+        download_zip(url, fname, dest, folder=True)
+        print 'Download complete\n'
+

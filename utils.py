@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+epsilon=10e-8
 
 
 def plot(values, colors, labels, ylabel, xlabel, save_path="test_fig"):
@@ -9,6 +10,20 @@ def plot(values, colors, labels, ylabel, xlabel, save_path="test_fig"):
     plt.xlabel(xlabel)
     plt.legend(loc='upper right')
     plt.savefig(save_path)
+    plt.close()
+
+def rank_plot(seqs, vocab, title="flickr data", save_path=None):
+    alpha=multinomial_probabilities(seqs, len(vocab), k=1.0, normalize=False)
+    alpha.sort(axis=1)
+    alpha = alpha[:,::-1]
+    plt.xlabel("state")
+    plt.ylabel("frequency")
+    plt.title(title)
+    plt.bar(range(len(vocab)),alpha[0,:])
+    if save_path is None:
+        plt.show()
+    else:
+        plt.savefig(save_path)
     plt.close()
 
 
@@ -83,8 +98,6 @@ def compute_likelihood_cut(predictions, train_percent, orig_lengths=None, count_
     assert train_percent <= 1.0, "ERROR: train_percent should be <= 1.0"
     train_lls=[]
     val_lls=[]
-    train_seqs=0
-    val_seqs=0
     for i,pred in enumerate(predictions):
         sort_pred=pred[:]
         if not count_first_prob:
@@ -96,23 +109,25 @@ def compute_likelihood_cut(predictions, train_percent, orig_lengths=None, count_
         val_elems = int(np.floor((1.0-train_percent) * seq_length))
         if train_elems > 0:
             train_lls.append(neg_log_likelihood(sort_pred[0:train_elems])/train_elems)
-            train_seqs+=1
         if val_elems>0 :
             val_lls.append(neg_log_likelihood(sort_pred[-val_elems:])/val_elems)
-            val_seqs+=1
 
-    return np.sum(train_lls)/train_seqs,np.sum(val_lls)/val_seqs
+    return np.sum(train_lls)/len(train_lls),np.sum(val_lls)/len(val_lls)
 
 
 def compute_likelihood(predictions, count_first_prob=False):
+    epsilon=1e-07
+    #np.clip(predictions, epsilon, 1-epsilon)
     lls=[]
     for i,pred in enumerate(predictions):
         sort_pred=pred[:]
         if not count_first_prob:
             sort_pred=sort_pred[1:]
+        sort_pred=np.clip(sort_pred,epsilon,1.0-epsilon)
         if len(sort_pred)>0:
             lls.append(neg_log_likelihood(sort_pred)/len(sort_pred))
-    return np.sum(lls)/len(lls)
+
+    return np.mean(lls)
 
 
 def compute_unique_elements(seqs):
@@ -122,9 +137,17 @@ def compute_unique_elements(seqs):
             unique_elems.add(s)
     return len(unique_elems)
 
+
 def compute_seq_max_length(seqs):
     max_seq_length=0
     for seq in seqs:
         if len(seq)>max_seq_length:
             max_seq_length=len(seq)
     return max_seq_length
+
+def sample_weights(alpha,sigma):
+    samples=np.zeros(alpha.shape)
+    for i in range(alpha.shape[0]):
+        for j in range(alpha.shape[1]):
+            samples[i,j]=np.random.normal(alpha[i,j], sigma, 1)
+    return samples

@@ -1,243 +1,191 @@
 """
 Helper methods for experiments
 """
-from model import RNNBaseline, RNNFullModel, ValLossHistoryCut, MultinomialModel, MarkovModel, NoRecurrenceModel
+from model import RNNBaseline, RNNFullModel, ValLossHistoryCut, MultinomialModel, MarkovModel, NoRecurrenceModel, \
+    ModelResults
 from preprocessor import FullModelPreprocessor, BaselinePreprocessor
 import numpy as np
 import utils
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping,ModelCheckpoint
 
 
-def prepare_baseline_input(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, wrt_time=False):
-    preprocessor = BaselinePreprocessor(vocab=vocab, pad_value=0., seq_length=max_seq_length)
-    # hack here when we split w.r.t for the validation data.
-    # important to keep the following if-then=else
-    x_train, y_train = preprocessor.transform_data(seqs_train, xs=xs_train)
-    x_val, y_val = preprocessor.transform_data(seqs_val, xs=xs_val)
-
-    print "(train sequences,train timesteps,input dimension):", x_train.shape
-    print "(val sequences,val timesteps,val dimension):", x_val.shape
-    return x_train, y_train, x_val, y_val
-
-
-def prepare_fullmodel_input(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, split_wrt_time=False):
+def prepare_model_input(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length):
     preprocessor = FullModelPreprocessor(vocab=vocab, pad_value=0., seq_length=max_seq_length)
-    # hack here when we split w.r.t for the validation data.
-    # important to keep the following if-then=else
     x_train, y_train, train_xs = preprocessor.transform_data(seqs_train, xs=xs_train)
     x_val, y_val, val_xs = preprocessor.transform_data(seqs_val, xs=xs_val)
-    print "(train sequences,train timesteps,input dimension):", x_train.shape
-    print "(val sequences,val timesteps,val dimension):", x_val.shape
     return x_train, y_train, train_xs, x_val, y_val, val_xs
 
 
-def run_model(model, x_train, y_train, validation_data=None, orig_seqs_lengths=None, loss='categorical_crossentropy',
-              metrics=[], optimizer='adam',
+def run_model(model, x_train, y_train, validation_data=None, orig_seqs_lengths=None,model_checkpoint=False,
               n_epochs=20, batch_size=10, verbose=1, dir_save="trained_models/", early_stopping=False, wrt_time=False,
-              read_file=None):
+              ):
     callbacks = []
     rnn_validation_data = validation_data
     if wrt_time:
         val_history = ValLossHistoryCut(validation_data, orig_seqs_lengths)
         rnn_validation_data = None
         callbacks.append(val_history)
+    if model_checkpoint:
+        checkpoint = ModelCheckpoint(dir_save+ model.model_name+".{epoch:02d}-{val_loss:.2f}.hdf5", monitor='val_loss',save_best_only=True, save_weights_only=True)
+        callbacks.append(checkpoint)
     if early_stopping:
         if wrt_time:
-            monitor="my_loss"
+            monitor = "my_loss"
         else:
-            monitor="val_loss"
+            monitor = "val_loss"
         stopping = EarlyStopping(monitor=monitor, min_delta=0, patience=0, verbose=0, mode='auto')
         callbacks.append(stopping)
 
     history = None
-    if not read_file:
-        history = model.fit_model(x_train, y_train, validation_data=rnn_validation_data, loss=loss, metrics=metrics,
-                                  optimizer=optimizer, n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                                  callbacks=callbacks)
-        model.save_model_weights(dir_save)
-    else:
-        model.load_model_weights(read_file)
-
+    model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
+    history = model.fit_model(x_train, y_train, validation_data=rnn_validation_data,
+                              n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                              callbacks=callbacks)
     if wrt_time:
-        history.history['val_loss'] = val_history.val_lossses
+        if history:
+            history.history['val_loss'] = val_history.val_lossses
 
     return history
 
 
-def analyze_history(history, filepath):
+def evaluate_full_model(model, seqs_test, xs_test, vocab, max_seq_length, with_xs=True):
+    preprocessor = BaselinePreprocessor(vocab=vocab, pad_value=0., seq_length=max_seq_length)
+    x_test, y_test, test_xs = preprocessor.transform_data(seqs_test, xs=xs_test)
+    print "(test sequences,test timesteps,input dimension):", x_test.shape
+
+    if with_xs:
+        return model.model.evaluate([x_test, test_xs], y_test)
+    else:
+        return model.model.evaluate(x_test, y_test)
+
+
+def analyze_history(history):
     train_losses = history.history['loss']
     val_losses = history.history['val_loss']
-    for key, value in history.history.items():
-        print key, value
-    utils.plot(values=[train_losses, val_losses], colors=['b', 'g'],
-               labels=['Train loss', 'Val loss'], ylabel='loss', xlabel='epoch', save_path=filepath + "_loss")
-    print "min val loss: %f at epoch: %d" % (np.min(val_losses), np.argmin(val_losses)+1)
-    print "train loss: %f at epoch: %d" % (train_losses[np.argmin(val_losses)], np.argmin(val_losses)+1)
+    print "min val loss: %f at epoch: %d" % (np.min(val_losses), np.argmin(val_losses) + 1)
+    print "train loss: %f at epoch: %d" % (train_losses[np.argmin(val_losses)], np.argmin(val_losses) + 1)
+    results = ModelResults(train_losses[np.argmin(val_losses)], np.min(val_losses), np.argmin(val_losses) + 1)
+    return results
 
 
-def run_multinomial(seqs_train, val_seqs, n_classes, wrt_time=False):
-    mult_model = MultinomialModel(n_classes, model_name="multi_model", k=1.0)
-    mult_model.fit_model(seqs_train)
-    val_preds = mult_model.predict(val_seqs)
+def run_multinomial(seqs_train, val_seqs, n_classes, wrt_time=False, normalize=True,k=1.0):
+    model = MultinomialModel(n_classes, model_name="multinomial", k=k)
+    model.fit_model(seqs_train, normalize=normalize)
+    val_preds = model.predict(val_seqs)
     if wrt_time:
         train_neg_ll, val_neg_ll = utils.compute_likelihood_cut(val_preds, 0.7, count_first_prob=False)
     else:
-        train_preds=mult_model.predict(seqs_train)
-        train_neg_ll= utils.compute_likelihood(train_preds, count_first_prob=False)
-        val_neg_ll= utils.compute_likelihood(val_preds, count_first_prob=False)
+        train_preds = model.predict(seqs_train)
+        train_neg_ll = utils.compute_likelihood(train_preds, count_first_prob=False)
+        val_neg_ll = utils.compute_likelihood(val_preds, count_first_prob=False)
     print "Multinomial train neg ll: %f, val neg ll: %f" % (train_neg_ll, val_neg_ll)
+    results = ModelResults(train_neg_ll, val_neg_ll, None)
+    return model, results
 
 
-def run_markov(seqs_train, val_seqs, n_classes, wrt_time=False):
-    markov_model = MarkovModel(n_classes, model_name="markov_model", order=1, k=1.0)
-    markov_model.fit_model(seqs_train)
-    val_preds = markov_model.predict(val_seqs)
+def run_markov(seqs_train, val_seqs, n_classes, wrt_time=False, k=1.0):
+    model = MarkovModel(n_classes, model_name="markov", order=1, k=k)
+    model.fit_model(seqs_train)
+    val_preds = model.predict(val_seqs)
     if wrt_time:
         train_neg_ll, val_neg_ll = utils.compute_likelihood_cut(val_preds, 0.7, count_first_prob=False)
     else:
-        train_preds = markov_model.predict(seqs_train)
+        train_preds = model.predict(seqs_train)
         train_neg_ll = utils.compute_likelihood(train_preds, count_first_prob=False)
         val_neg_ll = utils.compute_likelihood(val_preds, count_first_prob=False)
     print "Markov train neg ll: %f, val neg ll: %f" % (train_neg_ll, val_neg_ll)
-    return markov_model
+    results = ModelResults(train_neg_ll, val_neg_ll, None)
+    return model, results
 
 
-def run_baseline_rnn(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, orig_seqs_lengths=None, with_xs=True, wrt_time=False,
-                     read_file=None, rnn_type="LSTM", z_dim=10, z_activation="relu", early_stopping=False, n_epochs=50, verbose=1,
-                     batch_size=10, model_name="test_model"):
-    """Runs a baseline RNN model with connections: [y_(t-1),x_t]->z_t and z_t->y_t.
-       NO direct connections between y's. NO direct connections of x's to y's. 
-       Set with_xs to False to remove x's from input features."""
-    if with_xs:
-        x_train, y_train, x_val, y_val = prepare_baseline_input(seqs_train, seqs_val, xs_train=xs_train, xs_val=xs_val,
-                                                            vocab=vocab, max_seq_length=max_seq_length, wrt_time=wrt_time)
-    else:
-        x_train, y_train, x_val, y_val = prepare_baseline_input(seqs_train, seqs_val, xs_train=None, xs_val=None,
-                                                                vocab=vocab, max_seq_length=max_seq_length, wrt_time=wrt_time)
-    baseline = RNNBaseline(x_train.shape[1], x_train.shape[2], len(vocab), model_name=model_name,
-                           rnn_type=rnn_type, z_activation=z_activation, z_dim=z_dim)
-    print
-    print baseline.model_name
-    print baseline.model.summary()
-    history = run_model(baseline, x_train, y_train, validation_data=(x_val, y_val), orig_seqs_lengths=orig_seqs_lengths,
-                        loss='categorical_crossentropy', metrics=[], optimizer='adam', n_epochs=n_epochs, batch_size=batch_size,
-                        verbose=verbose, early_stopping=early_stopping, wrt_time=wrt_time, read_file=read_file)
-    analyze_history(history, baseline.model_name)
-    return baseline
-
-
-def run_rnn_xtoy(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, orig_seqs_lengths=None, wrt_time=False,
-                 read_file=None, rnn_type="LSTM", early_stopping=False, n_epochs=50, batch_size=10,
-                 verbose=1, model_name="test_model"):
-    """Runs an RNN model with connections: y_(t-1)->z_t, x_t->y_t and z_t->y_t. No direct connections between y's.
-        """
-    x_train, y_train, train_xs, x_val, y_val, val_xs = prepare_fullmodel_input(seqs_train, seqs_val, xs_train,
-                                                                               xs_val, vocab,
-                                                                               max_seq_length=max_seq_length, split_wrt_time=wrt_time)
-    full_model = RNNFullModel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=10,
-                              model_name=model_name, rnn_type=rnn_type, z_to_z_activation="relu",
-                              y_to_y_activation="linear", y_bias=False, z_bias=True, xz_bias=False,
-                              y_to_y_regularizer=None,
-                              connect_x_to_y=True, connect_y_to_y=False)
-    print full_model.model_name
-    print full_model.model.summary()
-    history = run_model(full_model, [x_train,train_xs], y_train, validation_data=([x_val,val_xs], y_val),
-                        orig_seqs_lengths=orig_seqs_lengths, loss='categorical_crossentropy', metrics=[],
-                        optimizer='adam',
-                        n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                        early_stopping=early_stopping, wrt_time=wrt_time, read_file=read_file)
-    analyze_history(history, full_model.model_name)
-
-
-def run_rnn_only_ytoy(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, orig_seqs_lengths=None, wrt_time=False,
-                      read_file=None, early_stopping=False, n_epochs=50, batch_size=10,
-                      verbose=1, model_name="test_model", connect_x=True, connect_y=True, y_bias=True, embed_y=False, z_dim=10,):
-    """Runs an RNN model with connections: y_(t-1)->z_t, x_t->y_t and z_t->y_t. No direct connections between y's.
-        """
-    x_train, y_train, train_xs, x_val, y_val, val_xs = prepare_fullmodel_input(seqs_train, seqs_val, xs_train,
-                                                                               xs_val, vocab, max_seq_length=max_seq_length, split_wrt_time=wrt_time)
-
-    full_model = NoRecurrenceModel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), model_name=model_name,
-                                   y_to_y_activation="linear", x_to_y_activation="linear", out_activation="softmax",
-                                   y_bias=y_bias, xy_bias=False, y_to_y_regularizer=None, connect_x=connect_x, connect_y=connect_y, embed_y=embed_y, z_dim=z_dim)
-    print full_model.model_name
-    print full_model.model.summary()
+def run_model_no_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs, vocab,orig_seqs_lengths=None, wrt_time=False,
+                            read_file=None, model_checkpoint=False, early_stopping=False, n_epochs=50, batch_size=10,
+                            y_to_y_trainable=True, y_to_y_w_initializer=None, y_to_y_regularizer=None,
+                            verbose=1, model_name="test_model", connect_x=True, connect_y=True,
+                            xy_bias=False, y_bias=False, embed_y=False, z_dim=10, diag_b=True):
+    model = NoRecurrenceModel(timesteps=x_train.shape[1],x_dim=x_train.shape[2], y_dim=len(vocab),
+                              model_name=model_name,
+                              y_to_y_activation="linear", y_to_y_w_initializer=y_to_y_w_initializer,
+                              x_to_y_activation="linear", out_activation="softmax",
+                              y_bias=y_bias, xy_bias=xy_bias, connect_x=connect_x,
+                              y_to_y_regularizer=y_to_y_regularizer,
+                              connect_y=connect_y, embed_y=embed_y, z_dim=z_dim, diag_b=diag_b)
     if connect_x:
         if connect_y:
-            train=[x_train,train_xs]
-            validation=[x_val,val_xs]
+            train = [x_train, train_xs]
+            validation = [x_val, val_xs]
         else:
             train = train_xs
             validation = val_xs
     else:
-        train=x_train
-        validation=x_val
-    history = run_model(full_model, train, y_train, validation_data=(validation, y_val),
-                        orig_seqs_lengths=orig_seqs_lengths, loss='categorical_crossentropy', metrics=[],
-                        optimizer='adam',
-                        n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                        early_stopping=early_stopping, wrt_time=wrt_time, read_file=read_file)
-    analyze_history(history, full_model.model_name)
-    return full_model
+        train = x_train
+        validation = x_val
+
+    if read_file:
+        model.load_model_weights(read_file)
+        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
+        results = ModelResults()
+        metrics_names, scores = model.evaluate(train, y_train, batch_size=1)
+        results.train_loss = scores[0]
+        metrics_names, scores = model.evaluate(validation, y_val, batch_size=1)
+        results.val_loss = scores[0]
+        print "train loss: %f, val loss: %f" % (results.train_loss, results.val_loss)
+    else:
+        if connect_y:
+            model.set_layer_weights_trainable("y_output", trainable=y_to_y_trainable)
+        history = run_model(model, train, y_train, validation_data=(validation, y_val),
+                            orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
+                            n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                            early_stopping=early_stopping, wrt_time=wrt_time)
+        results = analyze_history(history, model.model_name)
+    return model, results
 
 
-def run_rnn_ytoy(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, orig_seqs_lengths=None, y_to_y_trainable=True, y_to_y_weights=None,
-                 y_to_y_regularizer=None, wrt_time=False, read_file=None, rnn_type="LSTM", early_stopping=False, n_epochs=50, verbose=1,
-                 batch_size=10, model_name="test_model"):
-    """Runs a RNN model with connections: x_t->z_t, y_(t-1)->y_t and z_t->y_t.
-           Direct connections between y's. NO direct connections of x's to y's. 
-           """
-    x_train, y_train, train_xs, x_val, y_val, val_xs = prepare_fullmodel_input(seqs_train, seqs_val, xs_train,
-                                                                               xs_val, vocab, max_seq_length=max_seq_length, split_wrt_time=wrt_time)
-    full_model = RNNFullModel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=10,
-                              model_name=model_name, rnn_type=rnn_type, z_to_z_activation="relu",
-                              y_to_y_activation="linear", y_bias=False, z_bias=True, xz_bias=False,
-                              y_to_y_regularizer=y_to_y_regularizer,
-                              connect_x_to_y=False, connect_y_to_y=True)
-    full_model.set_layer_weights_trainable("y_to_y_output", trainable=y_to_y_trainable)
-    trainable_weights, non_trainable_weights = full_model.get_model_weights()
-    print "trainable weights: %s, non trainable weights %s" % (trainable_weights, non_trainable_weights)
-    if y_to_y_weights is not None:
-        full_model.set_layer_weights("y_to_y_output", y_to_y_weights)
-    print full_model.model_name
-    print full_model.model.summary()
-    history = run_model(full_model, [x_train,train_xs], y_train, validation_data=([x_val,val_xs], y_val),
-                        orig_seqs_lengths=orig_seqs_lengths, loss='categorical_crossentropy', metrics=[],
-                        optimizer='adam',
-                        n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                        early_stopping=early_stopping, wrt_time=wrt_time, read_file=read_file)
-    analyze_history(history, full_model.model_name)
+def run_model_with_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs,
+                              vocab,orig_seqs_lengths=None,
+                              wrt_time=False, y_to_y_trainable=True, y_to_y_w_initializer=None, toy_regularizer=None,
+                              y_to_y_regularizer=None, read_file=None, rnn_type="LSTM", early_stopping=False,
+                              n_epochs=50,model_checkpoint=True,
+                              batch_size=10, verbose=1, z_dim=10, model_name="test_model", y_to_z=True, y_to_y=True,
+                              x_to_y=True, x_to_z=False, diag_b=True, z_to_y_drop=0.0, y_to_z_dropout=0.1):
+    model = RNNFullModel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=z_dim,
+                         model_name=model_name, rnn_type=rnn_type, z_to_z_activation="relu",
+                         y_to_y_activation="linear", ytoy_bias=False, z_bias=True, toy_bias=False,
+                         toy_regularizer=toy_regularizer,
+                         y_to_y_regularizer=y_to_y_regularizer, y_to_y_w_initializer=y_to_y_w_initializer,
+                         y_to_z=y_to_z, y_to_y=y_to_y, x_to_y=x_to_y, x_to_z=x_to_z, diag_b=diag_b,
+                         z_to_y_drop=z_to_y_drop, y_to_z_dropout=y_to_z_dropout)
+    train = []
+    validation = []
+    if y_to_y or y_to_z:
+        train.append(x_train)
+        validation.append(x_val)
+    if x_to_y or x_to_z:
+        train.append(train_xs)
+        validation.append(val_xs)
+    if read_file:
+        model.load_model_weights(read_file)
+        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
+        results = ModelResults()
+        metrics_names, scores = model.evaluate(train, y_train)
+        results.train_loss = scores[0]
+        metrics_names, scores = model.evaluate(validation, y_val)
+        results.val_loss = scores[0]
+        print results.train_loss, results.val_loss
+        print "train loss: %f, val loss: %f" % (results.train_loss, results.val_loss)
+    else:
+        if y_to_y:
+            model.set_layer_weights_trainable("y_to_y_output", trainable=y_to_y_trainable)
+            trainable_weights, non_trainable_weights = model.get_model_weights()
+            # print "trainable weights: %s, non trainable weights %s" % (trainable_weights, non_trainable_weights)
+        # print model.model_name
+        # print model.model.summary()
+        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
 
+        history = run_model(model, train, y_train, validation_data=(validation, y_val),
+                            orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
+                            n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                            early_stopping=early_stopping, wrt_time=wrt_time)
+        results = analyze_history(history, model.model_name)
 
-def run_rnn_fullmodel(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length, orig_seqs_lengths=None, wrt_time=False, y_to_y_trainable=True, y_to_y_weights=None,
-                      y_to_y_regularizer=None, read_file=None, rnn_type="LSTM", early_stopping=False, n_epochs=50,
-                      batch_size=10, verbose=1, z_dim=10, model_name="test_model"):
-    """Runs a RNN model with connections: y_(t-1)]->z_t, y_(t-1)->y_t, x_t->y_t and z_t->y_t.
-       So, y's are directly connected. Also, x's are directly connected to y's. """
-    x_train, y_train, train_xs, x_val, y_val, val_xs = prepare_fullmodel_input(seqs_train, seqs_val, xs_train,
-                                                                               xs_val, vocab, max_seq_length=max_seq_length)
-    full_model = RNNFullModel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=z_dim,
-                              model_name=model_name, rnn_type=rnn_type, z_to_z_activation="relu",
-                              y_to_y_activation="linear", y_bias=False, z_bias=True, xz_bias=False,
-                              y_to_y_regularizer=y_to_y_regularizer,
-                              connect_x_to_y=True, connect_y_to_y=True)
-    full_model.set_layer_weights_trainable("y_to_y_output", trainable=y_to_y_trainable)
-    trainable_weights, non_trainable_weights = full_model.get_model_weights()
-    print "trainable weights: %s, non trainable weights %s" % (trainable_weights, non_trainable_weights)
-    if y_to_y_weights is not None:
-        full_model.set_layer_weights("y_to_y_output", y_to_y_weights)
-    print full_model.model_name
-    print full_model.model.summary()
-    history = run_model(full_model, [x_train,train_xs], y_train, validation_data=([x_val,val_xs], y_val),
-                        orig_seqs_lengths=orig_seqs_lengths, loss='categorical_crossentropy', metrics=[],
-                        optimizer='adam',
-                        n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                        early_stopping=early_stopping, wrt_time=wrt_time, read_file=read_file)
-    analyze_history(history, full_model.model_name)
-
-
-def get_model_weights(model, layer_name):
-    weights_list=[]
-    weights = model.get_layer_weights(layer_name)
-    weights_list.append(weights)
-    return weights_list
+    return model, results

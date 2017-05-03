@@ -5,8 +5,20 @@ examples of reading datasets
 """
 from __future__ import division
 
-from datasets import load_gowalla_data,load_msnbc_data,load_flickr_data,load_student_data
+from datasets import load_gowalla_data,load_msnbc_data,load_flickr_data,load_student_data,load_switchboard_data
 from collections import namedtuple
+import numpy as np
+
+### Switchboard
+print
+print "--- Loading Switchboard data ---"
+
+switchboard_data, vocab=load_switchboard_data()
+print "Dataset size:", len(switchboard_data)
+print "Vocab size:", len(vocab)
+print "Avg sequence length:", sum(map(lambda x: len(x), switchboard_data)) / len(switchboard_data)
+print "Avg unique acts per seq:", sum(map(lambda x: len(np.unique(x)), switchboard_data)) / len(switchboard_data)
+print switchboard_data
 
 ### Flickr
 print

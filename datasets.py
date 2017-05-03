@@ -77,6 +77,23 @@ def split_seqs(sequences, shuffle=True, train=0.7, val=0.3, test=0.0):
     return train_seqs, val_seqs, test_seqs
 
 
+def make_splits(sequences, shuffle=True, train=0.7, val=0.3, test=0.0):
+    """ split list of lists into train/val/test.
+        """
+    assert train + val + test == 1.0, "ERROR: percents should sum to 1.0"
+    seqs_size = len(sequences)
+    indices = range(seqs_size)
+    if shuffle:
+        random.shuffle(indices)
+
+    train_elems = int(np.ceil(train * seqs_size))
+    val_elems = int(np.floor(val * seqs_size))
+    train_idxs = indices[:train_elems]
+    val_idxs = indices[train_elems:train_elems + val_elems]
+    test_idxs = indices[train_elems + val_elems:]
+
+    return train_idxs,val_idxs,test_idxs
+
 def build_xs(sequences, vocab, freq=False):
     """ Constract x's for each sequence. 
         args:
@@ -284,3 +301,99 @@ def load_reddit_data(eliminate_repeats=False):
 
     return seqs, vocab
 
+
+def load_switchboard_data():
+    import os
+    import csv
+
+    data_dir = 'data/swda/'
+    vocab_id = 0
+    vocab = dict()
+
+    seqs = []
+    oldtag2newtag=load_tags_mapping()
+    for folder in os.listdir(data_dir):
+        folder_path = os.path.join(data_dir, folder)
+        if not os.path.isdir(folder_path):
+            continue
+        for csv_fname in os.listdir(folder_path):
+            seq=[]
+            fpath = os.path.join(data_dir, folder, csv_fname)
+            if fpath.endswith("csv"):
+                with open(fpath, 'r') as f:
+                    reader = csv.reader(f)
+                    header_ = reader.next()
+                    prevtag=""
+                    for line in reader:
+                        if "@" not in line[4]:
+                            for i, col in enumerate(header_):
+                                if i < len(line):
+                                    if col== 'act_tag':
+                                        oldtag=line[i]
+                                        newtag = transform_tag(oldtag, oldtag2newtag)
+                                        if newtag=="+":
+                                            newtag=prevtag
+                                        if newtag not in vocab:
+                                            vocab[newtag] = vocab_id
+                                            vocab_id += 1
+                                        seq.append(vocab[newtag])
+                                        prevtag = newtag
+                                        break
+            seqs.append(seq)
+    return seqs, vocab
+
+
+def load_tags_mapping():
+    import os
+    import csv
+    print "Loading label mapping file "
+    label_mapping_file = 'data/swbd-damsl_mapping_file.txt'
+    if not os.path.exists(label_mapping_file):
+        print "ERROR: No label mapping file found!"
+        return
+    oldtag2newtag = {}
+    i = 0
+    with open(label_mapping_file, 'r') as f:
+        reader = csv.reader(f, delimiter='\t')
+        for line in reader:
+            newlab = line[0]
+            oldlabs = line[1].split(',')
+            i += 1
+            for old in oldlabs:
+                oldtag2newtag[old] = newlab
+    return oldtag2newtag
+
+
+def transform_tag(oldtag,oldtag2newtag):
+    import re
+    oldtag = re.sub(r'\**$', '', oldtag)
+    if oldtag == '+':  # same as the last one
+        return oldtag
+    else:
+        # remove the trailing * at the end
+        newtag = oldtag2newtag.get(oldtag, "")
+        if newtag == "":
+            if "^" in oldtag:
+                ii = 0
+                oldtag1 = oldtag
+                while newtag == "":
+                    oldtag1 = re.sub(r'\(*\^[2gmreqhdtc]\)*$', '', oldtag1)
+                    newtag = oldtag2newtag.get(oldtag1, "")
+                    ii += 1
+                    if ii > 3:
+                        break
+            if "," in oldtag:
+                oldtag2 = oldtag.split(",")[0]
+                newtag = oldtag2newtag.get(oldtag2, "")
+                if newtag == "":
+                    print oldtag, oldtag2
+            if ";" in oldtag:
+                oldtag2 = oldtag.split(";")[0]
+                newtag = oldtag2newtag.get(oldtag2, "")
+                if newtag == "":
+                    print oldtag, oldtag2
+
+            if newtag == "":
+                print oldtag
+
+    return newtag

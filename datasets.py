@@ -95,7 +95,7 @@ def make_splits(sequences, shuffle=True, train=0.7, val=0.3, test=0.0):
     return train_idxs,val_idxs,test_idxs
 
 def build_xs(sequences, vocab, freq=False):
-    """ Constract x's for each sequence. 
+    """ Constract x's for each sequence.
         args:
             sequences: list of lists.
     """
@@ -113,25 +113,62 @@ def build_xs(sequences, vocab, freq=False):
     return xs
 
 
-def build_seqs_from_df(df, group_col, seq_col, sort_col):
-    sorted = df.sort_values([group_col, sort_col], ascending=True)
-    grouped = sorted.groupby([group_col])
-    seqs = grouped[seq_col].apply(list).values
-    return seqs
+def load_flickr_data(gap_thresh=30):
+    """Loads flickr dataset.
+
+    args:
+        gap_thresh: Duration of time (in minutes) elapsed between events to
+            consider next event start of a new sequence.
+
+    returns:
+        seqs, vocab
+    """
+    from datetime import datetime
+
+    vocab_id = 1
+    vocab = {'gap': 0} # 0 is the gap token
+
+    seqs = []
+    active_uid = None
+
+    with open('data/flickr-data.csv', 'r') as f:
+        for i, line in enumerate(f):
+
+            # Skip header
+            if i==0:
+                continue
+
+            # Parse data
+            line = line.rstrip('\r\n')
+            vals = line.split(',')
+            uid = vals[0]
+            token = vals[2]
+            curr_start = datetime.fromtimestamp(int(vals[3]))
+            curr_end = datetime.fromtimestamp(int(vals[4]))
 
 
-def load_flickr_data():
-    """Load Flickr dataset.
-        returns: 
-            data_table: pandas DataFrame.
-            stats: pandas DataFrame with dataset statistics
-        """
-    df = pd.read_csv("data/flickr-data.csv", delimiter=",", parse_dates=[0])
-    unique_vals = df["poiID"].unique()
-    vocab = dict(zip(unique_vals, range(len(unique_vals))))
-    df["poiID"].replace(vocab, inplace=True)
-    seqs = build_seqs_from_df(df, "userID", "poiID", "startTime")
-    return seqs,vocab
+            if uid != active_uid: # New user logic
+                try:
+                    seqs.append(active_seq)
+                except UnboundLocalError:
+                    pass
+                active_seq = []
+                active_uid = uid
+                prev_end = curr_end
+
+            # Handle gaps
+            time_diff = (curr_start - prev_end).total_seconds() / 60
+            if time_diff > gap_thresh:
+                active_seq.append(vocab['gap'])
+
+            if token not in vocab:
+                vocab[token] = vocab_id
+                vocab_id += 1
+
+            active_seq.append(vocab[token])
+            prev_end = curr_end
+
+    return seqs, vocab
 
 
 def load_msnbc_data():
@@ -149,7 +186,7 @@ def load_msnbc_data():
     seqs = []
     with open('data/msnbc-data.txt', 'r') as f:
         for i, line in enumerate(f):
-            if i>7: 
+            if i>7:
                 seq = []
                 vals = line.split()
                 for val in vals:

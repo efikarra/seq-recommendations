@@ -12,6 +12,7 @@ def plot(values, colors, labels, ylabel, xlabel, save_path="test_fig"):
     plt.savefig(save_path)
     plt.close()
 
+
 def rank_plot(seqs, vocab, title="flickr data", save_path=None):
     alpha=multinomial_probabilities(seqs, len(vocab), k=1.0, normalize=False)
     alpha.sort(axis=1)
@@ -25,6 +26,45 @@ def rank_plot(seqs, vocab, title="flickr data", save_path=None):
     else:
         plt.savefig(save_path)
     plt.close()
+
+
+def random_walk_animation(rw_sampler, path):
+    """Animate a random walk
+    
+    args:
+        rw_sampler. A random walk sampler object
+    """
+    import matplotlib.animation as animation
+
+    n_steps = 20 # Number of iterations to animate
+    sample_gen = rw_sampler.gen_sample()
+    k = rw_sampler.k
+    
+    def data_gen():
+        yield rw_sampler.pos, rw_sampler.x
+        for _ in xrange(n_steps):
+            next(sample_gen)
+            yield rw_sampler.pos, rw_sampler.x
+
+    def init():
+        rw_sampler.reset()
+        ax.set_xlim(0, k - 1)
+        ax.set_ylim(0, k - 1)
+        ax.set_title('beta = -0.1')
+
+    def run(data):
+        pos, x = data
+        for i in xrange(k):
+            for j in xrange(k):
+                ax.plot(i, j, color = 'white', marker='o')
+        ax.plot(pos[0], pos[1], color='black', marker='x')
+
+    fig, ax = plt.subplots()
+    ax.grid()
+
+    ani = animation.FuncAnimation(fig, run, data_gen, init_func=init,
+                                  interval=100, repeat=False)
+    ani.save(path)
 
 
 def multinomial_probabilities(seqs, n, k=1.0, normalize=True):
@@ -89,7 +129,6 @@ def transition_matrix(seqs, n, k=0, freq=False, end_state=True):
     return smoothed_alpha, smoothed_gamma
 
 
-
 def neg_log_likelihood(probs):
     return -np.sum(np.log(probs))
 
@@ -145,9 +184,11 @@ def compute_seq_max_length(seqs):
             max_seq_length=len(seq)
     return max_seq_length
 
+
 def sample_weights(alpha,sigma):
     samples=np.zeros(alpha.shape)
     for i in range(alpha.shape[0]):
         for j in range(alpha.shape[1]):
             samples[i,j]=np.random.normal(alpha[i,j], sigma, 1)
     return samples
+

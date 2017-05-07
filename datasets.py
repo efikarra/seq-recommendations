@@ -14,6 +14,7 @@ def remove_short_seqs(seqs, min_seq_length=1):
         clean_seqs.append(seq)
     return clean_seqs
 
+
 def get_seq_percent(seq, percent, from_start=True):
     seq_length = len(seq)
     if from_start:
@@ -307,35 +308,28 @@ def load_student_data(gap_thresh=30):
 
 
 def load_reddit_data(eliminate_repeats=False):
-    import os
-    top = 'data/reddit-data/'
-
+    # Initialize
     vocab_id = 0
     vocab = dict()
-
     seqs = []
-
-    for root, dirs, files in os.walk(top):
-        for fname in files: # Each fname is a new user
-            prev_token = None
-            seq = []
-            with open(root+fname, 'r') as f:
-                for line in f:
-                    vals = line.split(',')
-                    token = vals[0]
-
-                    if eliminate_repeats:
-                        if token == prev_token:
-                            continue
-
-                    if token not in vocab:
-                        vocab[token] = vocab_id
-                        vocab_id += 1
-
-                    seq.append(vocab[token])
-                    prev_token = token
-            seqs.append(seq)
-
+    active_uid = None
+    with open('data/reddit-data.csv', 'r') as f:
+        for line in f:
+            vals = line.split(',')
+            uid, token = vals[0], vals[1]
+            # Start new sequence on new uid
+            if uid != active_uid:
+                try:
+                    seqs.append(active_seq)
+                except UnboundLocalError:
+                    pass
+                active_seq = []
+                active_uid = uid
+            # Enumerate tokens
+            if token not in vocab:
+                vocab[token] = vocab_id
+                vocab_id += 1
+            active_seq.append(vocab[token])
     return seqs, vocab
 
 

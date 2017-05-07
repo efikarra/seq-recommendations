@@ -26,13 +26,12 @@ def download_zip(url, fname, dest, folder=False):
                      f_out.write(f_in.read())
     os.remove(tmpfile)
 
-## TODO all files or just data ???
-# def download_tar(url, fname, dest):
-#     tmpfile = 'data.tmp'
-#     urllib.urlretrieve(url, tmpfile)
-#     with tarfile.open(tmpfile, 'r:gz') as tarf:
-#         member = tarf.getmember(fname)
-#         tarf.extractall(
+def download_targz(url, dest_folder):
+    tmpfile = 'data.tmp'
+    urllib.urlretrieve(url, tmpfile)
+    with tarfile.open(tmpfile, 'r:gz') as tarf:
+        tarf.extractall(dest_folder)
+    os.remove(tmpfile)
 
 if __name__ == '__main__':
     import argparse
@@ -73,10 +72,9 @@ if __name__ == '__main__':
 
     if 'reddit' in args.dataset:
         print 'Downloading reddit dataset'
-        url = 'https://www.dropbox.com/s/uqimryat9x12ao1/reddit-data.zip?dl=1'
-        fname = None
+        url = 'https://www.dropbox.com/s/e60fi9js1svden7/reddit-data.tar.gz?dl=1'
         dest = 'data/'
-        download_zip(url, fname, dest, folder=True)
+        download_targz(url, dest)
         print 'Download complete\n'
 
     if 'switchboard' in args.dataset:

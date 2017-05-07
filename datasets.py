@@ -313,6 +313,7 @@ def load_reddit_data(eliminate_repeats=False):
     vocab = dict()
     seqs = []
     active_uid = None
+    prev_token = None
     with open('data/reddit-data.csv', 'r') as f:
         for line in f:
             vals = line.split(',')
@@ -325,11 +326,15 @@ def load_reddit_data(eliminate_repeats=False):
                     pass
                 active_seq = []
                 active_uid = uid
-            # Enumerate tokens
+            # Logic applied to all lines
             if token not in vocab:
                 vocab[token] = vocab_id
                 vocab_id += 1
-            active_seq.append(vocab[token])
+            if eliminate_repeats and token != prev_token:
+                active_seq.append(vocab[token])
+                prev_token = token
+            elif not eliminate_repeats:
+                active_seq.append(vocab[token])
     return seqs, vocab
 
 

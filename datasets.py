@@ -59,7 +59,6 @@ def split_seqs_wrt_time(sequences, xs, train=0.7, val=0.3, test=0.0):
 def split_seqs(sequences, shuffle=True, train=0.7, val=0.3, test=0.0):
     """ split list of lists into train/val/test.
     """
-    assert train + val + test == 1.0, "ERROR: percents should sum to 1.0"
     seqs_size = len(sequences)
     indices = range(seqs_size)
     if shuffle:

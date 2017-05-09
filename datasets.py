@@ -337,6 +337,59 @@ def load_reddit_data(eliminate_repeats=False):
     return seqs, vocab
 
 
+def reddit_generator(filename, batch_size=100, eliminate_repeats=False, with_xs=True,
+                     with_x=True):
+    from keras.utils import np_utils
+    from keras.preprocessing.sequence import pad_sequences
+    import cPickle
+
+    # Initialize
+    with open('data/reddit-vocab.pkl', 'rb') as pkl_file:
+        vocab = cPickle.load(pkl_file)
+    counter = 0
+
+    seqs = []
+    active_uid = None
+    prev_token = None
+    with open(filename, 'r') as f:
+        for line in f:
+            vals = line.split(',')
+            uid, token = vals[0], vals[1]
+            # Start new sequence on new uid
+            if uid != active_uid:
+                try:
+                    seqs.append(active_seq)
+                except UnboundLocalError:
+                    pass
+                active_seq = []
+                active_uid = uid
+                counter += 1
+            # Logic applied to all lines
+            if token not in vocab:
+                raise KeyError('ERROR: Unseen token observed. Rebuild vocabulary?')
+            if eliminate_repeats and token != prev_token:
+                active_seq.append(vocab[token])
+                prev_token = token
+            elif not eliminate_repeats:
+                active_seq.append(vocab[token])
+            # Batch is full
+            if counter == batch_size + 1:
+                padded = pad_sequences(seqs, maxlen=5000)
+                y = np_utils.to_categorical(padded, num_classes=1000).reshape((padded.shape[0], padded.shape[1], 1000))
+                if with_xs and with_x:
+                    x = (np.cumsum(y, axis=1) > 0).astype(np.float64)
+                    inputs = [y[:,:-1,:], x[:,:-1,:]]
+                elif with_xs:
+                    inputs = x[:,:-1,:]
+                elif with_x:
+                    inputs = y[:,:-1,:]
+                outputs = y[:,1:,:]
+                # Reset
+                seqs = []
+                counter = 0
+                yield inputs, outputs
+
+
 def load_switchboard_data():
     import os
     import csv

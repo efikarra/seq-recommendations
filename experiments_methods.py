@@ -7,18 +7,18 @@ from preprocessor import FullModelPreprocessor, BaselinePreprocessor
 import numpy as np
 import utils
 from keras.callbacks import EarlyStopping,ModelCheckpoint
+from keras.optimizers import Adagrad
 
-
-def prepare_model_input(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length):
-    preprocessor = FullModelPreprocessor(vocab=vocab, pad_value=0., seq_length=max_seq_length)
+def prepare_model_input(seqs_train, seqs_val, xs_train, xs_val, vocab, max_seq_length,sparse=False):
+    preprocessor = FullModelPreprocessor(vocab=vocab, pad_value=0., seq_length=max_seq_length,sparse=sparse)
     x_train, y_train, train_xs = preprocessor.transform_data(seqs_train, xs=xs_train)
     x_val, y_val, val_xs = preprocessor.transform_data(seqs_val, xs=xs_val)
     return x_train, y_train, train_xs, x_val, y_val, val_xs
 
 
-def run_model(model, x_train, y_train, validation_data=None, orig_seqs_lengths=None,model_checkpoint=False,
+def run_model(model, x_train, y_train, validation_data=None, orig_seqs_lengths=None,model_checkpoint=False,loss="categorical_crossentropy",
               n_epochs=20, batch_size=10, verbose=1, dir_save="trained_models/", early_stopping=False, wrt_time=False,
-              ):
+              lr=0.01):
     callbacks = []
     rnn_validation_data = validation_data
     if wrt_time:
@@ -26,18 +26,20 @@ def run_model(model, x_train, y_train, validation_data=None, orig_seqs_lengths=N
         rnn_validation_data = None
         callbacks.append(val_history)
     if model_checkpoint:
-        checkpoint = ModelCheckpoint(dir_save+ model.model_name+".{epoch:02d}-{val_loss:.2f}.hdf5", monitor='val_loss',save_best_only=True, save_weights_only=True)
+        print model_checkpoint
+        checkpoint = ModelCheckpoint(dir_save+ model.model_name+".{epoch:02d}-{val_loss:.2f}.hdf5", monitor='val_loss',save_weights_only=True,save_best_only=True)
         callbacks.append(checkpoint)
     if early_stopping:
         if wrt_time:
             monitor = "my_loss"
         else:
             monitor = "val_loss"
-        stopping = EarlyStopping(monitor=monitor, min_delta=0, patience=0, verbose=0, mode='auto')
+        stopping = EarlyStopping(monitor=monitor, min_delta=0, patience=15, verbose=0, mode='auto')
         callbacks.append(stopping)
 
     history = None
-    model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
+    adam=Adagrad(lr=lr, epsilon=1e-08, decay=0.0, clipnorm=1.)
+    model.compile_model(loss=loss, metrics=[], optimizer=adam)
     history = model.fit_model(x_train, y_train, validation_data=rnn_validation_data,
                               n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
                               callbacks=callbacks)
@@ -47,6 +49,33 @@ def run_model(model, x_train, y_train, validation_data=None, orig_seqs_lengths=N
 
     return history
 
+
+def run_model_with_generator(model, train_gen, val_gen,model_checkpoint=False,loss="categorical_crossentropy",
+              n_epochs=20, batch_size=10, verbose=1, dir_save="trained_models/", early_stopping=False, wrt_time=False,
+                             lr=0.01):
+    callbacks = []
+    if model_checkpoint:
+        checkpoint = ModelCheckpoint(dir_save + model.model_name + ".{epoch:02d}-{val_loss:.2f}.hdf5",
+                                     monitor='val_loss', save_weights_only=True, save_best_only=True)
+        callbacks.append(checkpoint)
+    if early_stopping:
+        if wrt_time:
+            monitor = "my_loss"
+        else:
+            monitor = "val_loss"
+        stopping = EarlyStopping(monitor=monitor, min_delta=0, patience=15, verbose=0, mode='auto')
+        callbacks.append(stopping)
+
+    history = None
+    adam = Adagrad(lr=lr, epsilon=1e-08, decay=0.0, clipnorm=1.)
+    model.compile_model(loss=loss, metrics=[], optimizer=adam)
+    history = model.fit_generator(train_gen, steps_per_epoch=1, validation_data=val_gen,
+                                  validation_steps=1,
+                                  epochs=n_epochs, verbose=verbose, callbacks=callbacks,
+                                  )
+
+
+    return history
 
 def evaluate_full_model(model, seqs_test, xs_test, vocab, max_seq_length, with_xs=True):
     preprocessor = BaselinePreprocessor(vocab=vocab, pad_value=0., seq_length=max_seq_length)
@@ -98,18 +127,26 @@ def run_markov(seqs_train, val_seqs, n_classes, wrt_time=False, k=1.0):
     return model, results
 
 
-def run_model_no_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs, vocab,orig_seqs_lengths=None, wrt_time=False,
+def run_model_no_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs, vocab, timesteps=None,x_dim=None,y_dim=None,
+                            train_gen=None,val_gen=None,
+                            orig_seqs_lengths=None, wrt_time=False,
                             read_file=None, model_checkpoint=False, early_stopping=False, n_epochs=50, batch_size=10,
                             y_to_y_trainable=True, y_to_y_w_initializer=None, y_to_y_regularizer=None,
-                            verbose=1, model_name="test_model", connect_x=True, connect_y=True,
-                            xy_bias=False, y_bias=False, embed_y=False, z_dim=10, diag_b=True):
-    model = NoRecurrenceModel(timesteps=x_train.shape[1],x_dim=x_train.shape[2], y_dim=len(vocab),
+                            verbose=1, model_name="test_model", connect_x=True, connect_y=True,mask_value=0.0,lr=0.01,
+                            xy_bias=False, y_bias=False, embed_y=False, z_dim=10, diag_b=True,loss='categorical_crossentropy'):
+    if timesteps is None:
+        timesteps=x_train.shape[1]
+    if x_dim is None:
+        x_dim=x_train.shape[2]
+    if y_dim is None:
+        y_dim=x_train.shape[2]
+    model = NoRecurrenceModel(timesteps=timesteps,x_dim=x_dim, y_dim=y_dim,
                               model_name=model_name,
                               y_to_y_activation="linear", y_to_y_w_initializer=y_to_y_w_initializer,
                               x_to_y_activation="linear", out_activation="softmax",
                               y_bias=y_bias, xy_bias=xy_bias, connect_x=connect_x,
                               y_to_y_regularizer=y_to_y_regularizer,
-                              connect_y=connect_y, embed_y=embed_y, z_dim=z_dim, diag_b=diag_b)
+                              connect_y=connect_y, embed_y=embed_y, z_dim=z_dim, diag_b=diag_b,mask_value=mask_value)
     if connect_x:
         if connect_y:
             train = [x_train, train_xs]
@@ -122,39 +159,53 @@ def run_model_no_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs, vo
         validation = x_val
 
     if read_file:
+        adam = Adagrad(lr=lr, epsilon=1e-08, decay=0.0, clipnorm=1.)
+        model.compile_model(loss=loss, metrics=[], optimizer=adam)
         model.load_model_weights(read_file)
-        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
         results = ModelResults()
-        metrics_names, scores = model.evaluate(train, y_train, batch_size=1)
+        metrics_names, scores = model.evaluate(train, y_train, batch_size=batch_size)
         results.train_loss = scores[0]
-        metrics_names, scores = model.evaluate(validation, y_val, batch_size=1)
+        metrics_names, scores = model.evaluate(validation, y_val, batch_size=batch_size)
         results.val_loss = scores[0]
         print "train loss: %f, val loss: %f" % (results.train_loss, results.val_loss)
     else:
         if connect_y:
             model.set_layer_weights_trainable("y_output", trainable=y_to_y_trainable)
-        history = run_model(model, train, y_train, validation_data=(validation, y_val),
-                            orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
-                            n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                            early_stopping=early_stopping, wrt_time=wrt_time)
+        if train_gen is not None and val_gen is not None:
+            history = run_model_with_generator(model, train_gen, val_gen,
+                                 model_checkpoint=model_checkpoint,
+                                n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                                early_stopping=early_stopping, wrt_time=wrt_time, loss=loss,lr=lr)
+        else:
+            history = run_model(model, train, y_train, validation_data=(validation, y_val),
+                                orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
+                                n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                                early_stopping=early_stopping, wrt_time=wrt_time,loss=loss,lr=lr)
         results = analyze_history(history)
     return model, results
 
 
 def run_model_with_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs,
-                              vocab,orig_seqs_lengths=None,
-                              wrt_time=False, y_to_y_trainable=True, y_to_y_w_initializer=None, toy_regularizer=None,
+                              vocab,timesteps=None,x_dim=None,y_dim=None,train_gen=None,val_gen=None,orig_seqs_lengths=None,
+                              wrt_time=False, y_to_y_trainable=True, y_to_y_w_initializer=None, toy_regularizer=None,z_to_z_activation="relu",
                               y_to_y_regularizer=None, read_file=None, rnn_type="LSTM", early_stopping=False,
-                              n_epochs=50,model_checkpoint=True,
+                              n_epochs=50,model_checkpoint=True,loss='categorical_crossentropy',y_to_z_initializer="glorot_normal",
                               batch_size=10, verbose=1, z_dim=10, model_name="test_model", y_to_z=True, y_to_y=True,
-                              x_to_y=True, x_to_z=False, diag_b=True, z_to_y_drop=0.0, y_to_z_dropout=0.1):
-    model = RNNFullModel(timesteps=x_train.shape[1], x_dim=x_train.shape[2], y_dim=len(vocab), z_dim=z_dim,
-                         model_name=model_name, rnn_type=rnn_type, z_to_z_activation="relu",
+                              x_to_y=True, x_to_z=False, diag_b=True, z_to_y_drop=0.0, y_to_z_dropout=0.0, z_to_z_dropout=0.0,lr=0.01):
+    if timesteps is None:
+        timesteps=x_train.shape[1]
+    if x_dim is None:
+        x_dim=x_train.shape[2]
+    if y_dim is None:
+        y_dim=x_train.shape[2]
+
+    model = RNNFullModel(timesteps=timesteps, x_dim=x_dim, y_dim=y_dim, z_dim=z_dim,
+                         model_name=model_name, rnn_type=rnn_type, z_to_z_activation=z_to_z_activation,
                          y_to_y_activation="linear", ytoy_bias=False, z_bias=True, toy_bias=False,
-                         toy_regularizer=toy_regularizer,
+                         toy_regularizer=toy_regularizer,y_to_z_initializer=y_to_z_initializer,
                          y_to_y_regularizer=y_to_y_regularizer, y_to_y_w_initializer=y_to_y_w_initializer,
                          y_to_z=y_to_z, y_to_y=y_to_y, x_to_y=x_to_y, x_to_z=x_to_z, diag_b=diag_b,
-                         z_to_y_drop=z_to_y_drop, y_to_z_dropout=y_to_z_dropout)
+                         z_to_y_dropout=z_to_y_drop, y_to_z_dropout=y_to_z_dropout, z_to_z_dropout=z_to_z_dropout)
     train = []
     validation = []
     if y_to_y or y_to_z:
@@ -164,12 +215,14 @@ def run_model_with_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs,
         train.append(train_xs)
         validation.append(val_xs)
     if read_file:
+        adam = Adagrad(lr=lr, epsilon=1e-08, decay=0.0, clipnorm=1.)
+        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer=adam)
         model.load_model_weights(read_file)
-        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
+
         results = ModelResults()
-        metrics_names, scores = model.evaluate(train, y_train)
+        metrics_names, scores = model.evaluate(train, y_train, batch_size=batch_size)
         results.train_loss = scores[0]
-        metrics_names, scores = model.evaluate(validation, y_val)
+        metrics_names, scores = model.evaluate(validation, y_val, batch_size=batch_size)
         results.val_loss = scores[0]
         print results.train_loss, results.val_loss
         print "train loss: %f, val loss: %f" % (results.train_loss, results.val_loss)
@@ -180,12 +233,17 @@ def run_model_with_recurrence(x_train, y_train, train_xs, x_val, y_val, val_xs,
             # print "trainable weights: %s, non trainable weights %s" % (trainable_weights, non_trainable_weights)
         # print model.model_name
         # print model.model.summary()
-        model.compile_model(loss='categorical_crossentropy', metrics=[], optimizer='adam')
 
-        history = run_model(model, train, y_train, validation_data=(validation, y_val),
-                            orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
-                            n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
-                            early_stopping=early_stopping, wrt_time=wrt_time)
+        if train_gen is not None and val_gen is not None:
+            history = run_model_with_generator(model, train_gen, val_gen,
+                                orig_seqs_lengths=orig_seqs_lengths, model_checkpoint=model_checkpoint,
+                                n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                                early_stopping=early_stopping, wrt_time=wrt_time, loss=loss,lr=lr)
+        else:
+            history = run_model(model, train, y_train, validation_data=(validation, y_val),
+                                orig_seqs_lengths=orig_seqs_lengths,model_checkpoint=model_checkpoint,
+                                n_epochs=n_epochs, batch_size=batch_size, verbose=verbose,
+                                early_stopping=early_stopping, wrt_time=wrt_time,loss=loss,lr=lr)
         results = analyze_history(history)
 
     return model, results

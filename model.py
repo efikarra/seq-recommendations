@@ -83,7 +83,7 @@ class GaussPriorRegularizer(Regularizer):
         return regularization
 
     def get_config(self):
-        return {'var': float(self.strength),
+        return {'var': float(self.var),
                 'means': self.means}
 
 
@@ -182,8 +182,14 @@ class BaseRNNModel(BaseModel):
                                  batch_size=batch_size, verbose=verbose, callbacks=callbacks)
         # print fileprefix+": "+self.evaluate(X_test,Y_test)
 
-    def fit_generator(self, train_generator, val_generator,steps_per_epoch=50, validation_steps=50,epochs=10):
-        return self.model.fit_generator(train_generator, validation_data=val_generator,steps_per_epoch=steps_per_epoch, validation_steps=validation_steps,epochs=epochs)
+    def fit_generator(self, train_gen, steps_per_epoch, validation_steps,
+                                  epochs, verbose, callbacks,
+                                  validation_data):
+        print steps_per_epoch
+        print validation_steps
+        return self.model.fit_generator(train_gen, validation_data=validation_data,callbacks=callbacks,
+                                        steps_per_epoch=steps_per_epoch, validation_steps=validation_steps,epochs=epochs,
+                                        verbose=verbose)
 
     def predict(self, x_test, batch_size=10, verbose=1):
         return self.model.predict(x_test, batch_size=batch_size, verbose=verbose)
@@ -226,8 +232,8 @@ class BaseRNNModel(BaseModel):
     def get_model_weights(self):
         return self.model.trainable_weights, self.model.non_trainable_weights
 
-    def get_activations(self, layer, inputs):
-        get_activations = K.function([self.model.layers[i].input for i in range(len(inputs))]+[K.learning_phase()], self.model.layers[layer].output)
+    def get_activations(self, layer, inputs, input_layers):
+        get_activations = K.function([self.model.get_layer(inp).input for inp in input_layers]+[K.learning_phase()], self.model.get_layer(layer).output)
         activations = get_activations(inputs+[0])
         return activations
 
@@ -257,7 +263,7 @@ class RNNBaseline(BaseRNNModel):
 
 class NoRecurrenceModel(BaseRNNModel):
     def __init__(self, timesteps, x_dim, y_dim, model_name="y_to_y_model",
-                 y_to_y_activation="linear", x_to_y_activation="linear", y_to_y_w_initializer=None, out_activation="softmax",
+                 y_to_y_activation="linear", x_to_y_activation="linear", y_to_y_w_initializer=None, out_activation="softmax",mask_value=0.0,
                  y_bias=False, xy_bias=False, y_to_y_regularizer=None, z_dim=10, z_bias=True, connect_x=True, connect_y=True, embed_y=False, diag_b=True):
         assert "ERROR: the model needs an input! either x or y should be added.", (connect_x == False and connect_y == False)
         BaseRNNModel.__init__(self, y_dim, model_name=model_name, rnn_type=None)
@@ -265,7 +271,7 @@ class NoRecurrenceModel(BaseRNNModel):
             y_to_y_w_initializer='random_uniform'
         if connect_y:
             y_input = Input(shape=(timesteps, y_dim), name="y_input")
-            mask1 = Masking(mask_value=0.0, input_shape=(timesteps, y_dim), name="mask1")
+            mask1 = Masking(mask_value=mask_value, input_shape=(timesteps, y_dim), name="mask1")
             masked_y_input = mask1(y_input)
             if embed_y:
                 # z_t=Wy_(t-1)+c, learn embedding of (y_t-1)
@@ -284,7 +290,7 @@ class NoRecurrenceModel(BaseRNNModel):
         # f(Bx_t), f=identity for now
         if connect_x:
             x_input = Input(shape=(timesteps, x_dim), name="x_input")
-            mask2 = Masking(mask_value=0.0, input_shape=(timesteps, x_dim), name="mask2")
+            mask2 = Masking(mask_value=mask_value, input_shape=(timesteps, x_dim), name="mask2")
             masked_x_input = mask2(x_input)
             kernel_constraint=None
             if diag_b:
@@ -317,8 +323,9 @@ class RNNFullModel(BaseRNNModel):
     def __init__(self, timesteps, x_dim, y_dim, z_dim=20, model_name="y_to_y_model", rnn_type='simpleRNN',
                  z_to_z_activation="relu",
                  y_to_y_activation="linear", xz_to_y_activation="linear", y_to_y_w_initializer=None, out_activation="softmax",
-                 ytoy_bias=False, toy_bias=False, z_bias=True, y_to_y_regularizer=None, toy_regularizer=None,y_to_z=True,
-                 y_to_y=True, x_to_y=True, x_to_z=False, z_to_y_drop=0.0, diag_b=True,y_to_z_dropout=0.0):
+                 ytoy_bias=False, toy_bias=False, z_bias=True, y_to_y_regularizer=None, toy_regularizer=None, y_to_z=True,
+                 y_to_z_initializer="glorot_normal",
+                 y_to_y=True, x_to_y=True, x_to_z=False, z_to_y_dropout=0.0, diag_b=True, y_to_z_dropout=0.0, z_to_z_dropout=0.0):
         BaseRNNModel.__init__(self, y_dim, model_name=model_name, rnn_type=rnn_type)
         assert "ERROR: the model needs an input into z's! either x or y should be added.", (x_to_z == False and y_to_z == False)
         if y_to_y_w_initializer is None:
@@ -336,29 +343,33 @@ class RNNFullModel(BaseRNNModel):
 
         if self.rnn_type == 'simpleRNN':
             rnn_model = SimpleRNN(z_dim, input_shape=(timesteps, x_dim), use_bias=z_bias, return_sequences=True,
-                                  activation=z_to_z_activation,
-                                  name="z_to_z_rnn")
+                                  activation=z_to_z_activation,recurrent_dropout=z_to_z_dropout,
+                                  name="z_to_z_output")
 
         if self.rnn_type == 'LSTM':
             rnn_model = LSTM(z_dim, input_shape=(timesteps, x_dim), return_sequences=True, use_bias=z_bias,
-                             activation=z_to_z_activation,
-                             name="z_to_z_lstm")
+                             activation=z_to_z_activation,recurrent_dropout=z_to_z_dropout,kernel_initializer=y_to_z_initializer,
+                             name="z_to_z_output")
 
         if y_to_z and x_to_z:
             z_input=concatenate([masked_y_input, masked_x_input])
-            z_input = Dropout(z_to_y_drop)(z_input)
+            if y_to_z_dropout>=0.0:
+                z_input = Dropout(y_to_z_dropout)(z_input)
             z_output = rnn_model(z_input)
         else:
             if y_to_z:
                 z_input =masked_y_input
-                z_input = Dropout(z_to_y_drop)(z_input)
+                if y_to_z_dropout >= 0.0:
+                    z_input = Dropout(y_to_z_dropout)(z_input)
                 z_output = rnn_model(z_input)
             elif x_to_z:
                 z_input =masked_x_input
-                z_input = Dropout(z_to_y_drop)(z_input)
+                if y_to_z_dropout >= 0.0:
+                    z_input = Dropout(y_to_z_dropout)(z_input)
                 z_output = rnn_model(z_input)
 
-        z_output = Dropout(z_to_y_drop)(z_output)
+        if z_to_y_dropout >= 0.0:
+            z_output = Dropout(z_to_y_dropout)(z_output)
 
         # f(Wz_t+Bx_t), f=identity for now
         xtoy_kernel_constraint = None

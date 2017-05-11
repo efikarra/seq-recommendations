@@ -139,28 +139,17 @@ class MCSampler(SequenceSampler):
 class RandomWalkSampler(SequenceSampler):
     """Generate sequences from a random walk with reinforcement on a grid"""
 
-    def __init__(self, k, experiment):
+    def __init__(self, k, betas):
         """Initialize model
 
         args:
             k: Board size
-            experiment: Can be one of:
-                'positive': All betas are +1
-                'negative': All betas are -1
-                'mixed': Betas randomly chosen to be +1 or -1
+            betas: Values that beta can be drawn from
         """
         self.k = k
         self.pos = (np.random.randint(0, self.k), np.random.randint(0, self.k))
         self.x = np.zeros((self.k, self.k))
-        if experiment == 'positive':
-            self.beta = np.ones((self.k, self.k)) * np.exp(1.0)
-        elif experiment == 'negative':
-            self.beta = np.ones((self.k, self.k)) * np.exp(-.10)
-        elif experiment == 'mixed':
-            choices = [1.25, 0.75]
-            self.beta = np.random.choice(choices, size=(self.k, self.k))
-        else:
-            raise AttributeError('Invalid experiment')
+        self.beta = np.random.choice(betas, size=(self.k, self.k))
         self.use_end_token = False # TODO: Refactor to avoid this stupid hack
 
     def gen_sample(self):

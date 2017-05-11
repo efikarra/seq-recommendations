@@ -139,17 +139,25 @@ class MCSampler(SequenceSampler):
 class RandomWalkSampler(SequenceSampler):
     """Generate sequences from a random walk with reinforcement on a grid"""
 
-    def __init__(self, k, betas):
+    def __init__(self, k, betas, homeward_bound, readable_states=False):
         """Initialize model
 
         args:
             k: Board size
             betas: Values that beta can be drawn from
+            homeward_bound: If True then model attracted to a randomly
+                generated home state
+            readable_states: If True then model outputs human readable
+                positions instead of integers
         """
         self.k = k
-        self.pos = (np.random.randint(0, self.k), np.random.randint(0, self.k))
+        self.pos = self._random_position()
         self.x = np.zeros((self.k, self.k))
         self.beta = np.random.choice(betas, size=(self.k, self.k))
+        self.homeward_bound = homeward_bound
+        if self.homeward_bound:
+            self._new_home()
+        self.readable_states = readable_states
         self.use_end_token = False # TODO: Refactor to avoid this stupid hack
 
     def gen_sample(self):
@@ -158,8 +166,11 @@ class RandomWalkSampler(SequenceSampler):
             self.x[u][v] += 1 # Note that agent has visited
 
             # Calculate local pdf
-            neighbors = self.get_neighbors()
-            pdf = np.array([self.beta[s][t]**self.x[s][t] for s, t in neighbors])
+            neighbors = self._get_neighbors()
+            if self.homeward_bound:
+                pdf = np.array([self.home_weights[s][t] * (self.beta[s][t] ** self.x[s][t]) for s, t in neighbors])
+            else:
+                pdf = np.array([self.beta[s][t] ** self.x[s][t] for s, t in neighbors])
             pdf = pdf / np.sum(pdf)
             cdf = np.cumsum(pdf)
 
@@ -168,9 +179,22 @@ class RandomWalkSampler(SequenceSampler):
             sample = np.argmax(cdf > rng)
             self.pos = neighbors[sample]
 
-            yield self.pos
+            if self.readable_states:
+                yield self.pos
 
-    def get_neighbors(self):
+            else:
+                out = self.pos[0]*self.k + self.pos[1]
+                yield out
+
+    def _new_home(self):
+        self.home = self._random_position()
+        self.home_weights = np.zeros((self.k, self.k))
+        for i in xrange(self.k):
+            for j in xrange(self.k):
+                dist = abs(i - self.home[0]) + abs(j - self.home[1])
+                self.home_weights[i][j] = np.exp(-dist)
+
+    def _get_neighbors(self):
         """Get coordinates of adjacent cells"""
         u, v = self.pos
         h_range = [u-1, u, u+1]
@@ -188,6 +212,9 @@ class RandomWalkSampler(SequenceSampler):
         else:
             return False
 
+    def _random_position(self):
+        return (np.random.randint(0, self.k), np.random.randint(0, self.k))
+
     def reset(self):
         # Resets player position and visit counts. Betas kept the same.
         self.pos = (np.random.randint(0, self.k), np.random.randint(0, self.k))
@@ -195,9 +222,9 @@ class RandomWalkSampler(SequenceSampler):
 
 
 if __name__ == '__main__':
-    from utils import random_walk_animation
-
     # Example random walk
-    rw_sampler = RandomWalkSampler(10, 'negative')
-    random_walk_animation(rw_sampler, 'test.mp4')
+    rw_sampler = RandomWalkSampler(10, betas=[1.0], homeward_bound=True,
+                                   readable_states=True)
+    print rw_sampler.home
+    print rw_sampler.gen_sequence(10)
 

@@ -84,4 +84,3 @@ if __name__ == '__main__':
         dest = 'data/'
         download_zip(url, fname, dest, folder=True)
         print 'Download complete\n'
-

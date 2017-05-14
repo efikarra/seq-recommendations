@@ -1,6 +1,15 @@
 import numpy as np
+import matplotlib
+matplotlib.use('agg',warn=False, force=True)
 import matplotlib.pyplot as plt
 epsilon=10e-8
+
+
+def chop_sequences(seqs, offset=200):
+    chooped_seqs = []
+    for seq in seqs:
+        chooped_seqs.append(seq[:offset])
+    return chooped_seqs
 
 
 def plot(values, colors, labels, ylabel, xlabel, save_path="test_fig"):

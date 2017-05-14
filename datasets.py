@@ -60,7 +60,6 @@ def split_seqs_wrt_time(sequences, xs, train=0.7, val=0.3, test=0.0):
 def split_seqs(sequences, shuffle=True, train=0.7, val=0.3, test=0.0):
     """ split list of lists into train/val/test.
     """
-    assert train + val + test == 1.0, "ERROR: percents should sum to 1.0"
     seqs_size = len(sequences)
     indices = range(seqs_size)
     if shuffle:
@@ -101,7 +100,7 @@ def build_xs(sequences, vocab, freq=False):
             sequences: list of lists.
     """
     xs = []
-    for seq in sequences:
+    for i,seq in enumerate(sequences):
         xi_s = []
         xi = [0] * len(vocab)
         for s in seq:
@@ -112,6 +111,26 @@ def build_xs(sequences, vocab, freq=False):
             xi_s.append(xi[:])
         xs.append(xi_s)
     return xs
+
+def build_seqs_from_df(df, group_col, seq_col, sort_col):
+    sorted = df.sort_values([group_col, sort_col], ascending=True)
+    grouped = sorted.groupby([group_col])
+    seqs = grouped[seq_col].apply(list).values
+    return seqs
+
+
+def load_flickr_data_df():
+    """Load Flickr dataset.
+        returns: 
+            data_table: pandas DataFrame.
+            stats: pandas DataFrame with dataset statistics
+        """
+    df = pd.read_csv("data/flickr-data.csv", delimiter=",", parse_dates=[0])
+    unique_vals = df["poiID"].unique()
+    vocab = dict(zip(unique_vals, range(len(unique_vals))))
+    df["poiID"].replace(vocab, inplace=True)
+    seqs = build_seqs_from_df(df, "userID", "poiID", "startTime")
+    return seqs,vocab
 
 
 def load_flickr_data(gap_thresh=30):
@@ -338,57 +357,44 @@ def load_reddit_data(eliminate_repeats=False):
     return seqs, vocab
 
 
-def reddit_generator(filename, batch_size=100, eliminate_repeats=False, with_xs=True,
+def reddit_generator(filename, batch_size=100, n_seqs=100,with_xs=True,
                      with_x=True):
     from keras.utils import np_utils
     from keras.preprocessing.sequence import pad_sequences
     import cPickle
-
-    # Initialize
-    with open('data/reddit-vocab.pkl', 'rb') as pkl_file:
+    from datasets import build_xs
+    with open('vocabs/reddit-vocab.pkl', 'rb') as pkl_file:
         vocab = cPickle.load(pkl_file)
     counter = 0
-
     seqs = []
-    active_uid = None
-    prev_token = None
-    with open(filename, 'r') as f:
-        for line in f:
-            vals = line.split(',')
-            uid, token = vals[0], vals[1]
-            # Start new sequence on new uid
-            if uid != active_uid:
-                try:
-                    seqs.append(active_seq)
-                except UnboundLocalError:
-                    pass
-                active_seq = []
-                active_uid = uid
+    while 1:
+        with open(filename, 'r') as f:
+            l=0
+            for i,line in enumerate(f):
+                print i,l
+                l+=1
+                seqs.append(map(int, line.split(",")))
                 counter += 1
-            # Logic applied to all lines
-            if token not in vocab:
-                raise KeyError('ERROR: Unseen token observed. Rebuild vocabulary?')
-            if eliminate_repeats and token != prev_token:
-                active_seq.append(vocab[token])
-                prev_token = token
-            elif not eliminate_repeats:
-                active_seq.append(vocab[token])
-            # Batch is full
-            if counter == batch_size + 1:
-                padded = pad_sequences(seqs, maxlen=5000)
-                y = np_utils.to_categorical(padded, num_classes=1000).reshape((padded.shape[0], padded.shape[1], 1000))
-                if with_xs and with_x:
-                    x = (np.cumsum(y, axis=1) > 0).astype(np.float64)
-                    inputs = [y[:,:-1,:], x[:,:-1,:]]
-                elif with_xs:
-                    inputs = x[:,:-1,:]
-                elif with_x:
-                    inputs = y[:,:-1,:]
-                outputs = y[:,1:,:]
-                # Reset
-                seqs = []
-                counter = 0
-                yield inputs, outputs
+                if i==n_seqs-1:
+                    counter = batch_size
+                if counter == batch_size:
+                    # print seqs[0]
+                    xs=build_xs(seqs, vocab, freq=False)
+                    padded = pad_sequences(seqs, maxlen=5001)
+                    padded_xs=pad_sequences(xs, maxlen=5001)
+                    y = np_utils.to_categorical(padded, num_classes=len(vocab)).reshape((padded.shape[0], padded.shape[1], 1000))
+                    if with_xs and with_x:
+                        #x = (np.cumsum(y, axis=1) > 0).astype(np.float64)
+                        inputs = [y[:, :-1, :], padded_xs[:, :-1, :]]
+                    elif with_xs:
+                        inputs = padded_xs[:, :-1, :]
+                    elif with_x:
+                        inputs = y[:, :-1, :]
+                    outputs = y[:, 1:, :]
+                    # Reset
+                    seqs = []
+                    counter = 0
+                    yield inputs, outputs
 
 
 def load_switchboard_data():

@@ -183,8 +183,7 @@ class RandomWalkSampler(SequenceSampler):
                 yield self.pos
 
             else:
-                out = self.pos[0]*self.k + self.pos[1]
-                yield out
+                yield self.pos_to_int(self.pos)
 
     def _new_home(self):
         self.home = self._random_position()
@@ -215,16 +214,40 @@ class RandomWalkSampler(SequenceSampler):
     def _random_position(self):
         return (np.random.randint(0, self.k), np.random.randint(0, self.k))
 
+    def pos_to_int(self, pos):
+        x = self.pos[0]*self.k + self.pos[1]
+        return x
+
+    def int_to_pos(self, x):
+        pos = (x // self.k, x % self.k)
+        return pos
+
     def reset(self):
-        # Resets player position and visit counts. Betas kept the same.
-        self.pos = (np.random.randint(0, self.k), np.random.randint(0, self.k))
+        # Resets player position, home, and visit counts. Betas kept the same.
+        self.pos = self._random_position()
+        if self.homeward_bound:
+            self._new_home()
         self.x = np.zeros((self.k, self.k))
 
 
 if __name__ == '__main__':
     # Example random walk
-    rw_sampler = RandomWalkSampler(10, betas=[1.0], homeward_bound=True,
-                                   readable_states=True)
-    print rw_sampler.home
-    print rw_sampler.gen_sequence(10)
-
+    rw_sampler = RandomWalkSampler(10, betas=[1.0], homeward_bound=True)
+    with open('data/random-walk-train.txt', 'w') as f:
+        for _ in xrange(10000):
+            seq = [str(x) for x in rw_sampler.gen_sequence(50)]
+            home = rw_sampler.pos_to_int(rw_sampler.home)
+            line = '%i\t%s\n' % (home, ' '.join(seq))
+            f.write(line)
+    with open('data/random-walk-dev.txt', 'w') as f:
+        for _ in xrange(10000):
+            seq = [str(x) for x in rw_sampler.gen_sequence(50)]
+            home = rw_sampler.pos_to_int(rw_sampler.home)
+            line = '%i\t%s\n' % (home, ' '.join(seq))
+            f.write(line)
+    with open('data/random-walk-test.txt', 'w') as f:
+        for _ in xrange(10000):
+            seq = [str(x) for x in rw_sampler.gen_sequence(50)]
+            home = rw_sampler.pos_to_int(rw_sampler.home)
+            line = '%i\t%s\n' % (home, ' '.join(seq))
+            f.write(line)

@@ -231,23 +231,21 @@ class RandomWalkSampler(SequenceSampler):
 
 
 if __name__ == '__main__':
-    # Example random walk
-    rw_sampler = RandomWalkSampler(10, betas=[1.0], homeward_bound=True)
-    with open('data/random-walk-train.txt', 'w') as f:
-        for _ in xrange(10000):
-            seq = [str(x) for x in rw_sampler.gen_sequence(50)]
-            home = rw_sampler.pos_to_int(rw_sampler.home)
-            line = '%i\t%s\n' % (home, ' '.join(seq))
-            f.write(line)
-    with open('data/random-walk-dev.txt', 'w') as f:
-        for _ in xrange(10000):
-            seq = [str(x) for x in rw_sampler.gen_sequence(50)]
-            home = rw_sampler.pos_to_int(rw_sampler.home)
-            line = '%i\t%s\n' % (home, ' '.join(seq))
-            f.write(line)
-    with open('data/random-walk-test.txt', 'w') as f:
-        for _ in xrange(10000):
-            seq = [str(x) for x in rw_sampler.gen_sequence(50)]
-            home = rw_sampler.pos_to_int(rw_sampler.home)
-            line = '%i\t%s\n' % (home, ' '.join(seq))
-            f.write(line)
+    from datasets import seqs_to_array
+    import cPickle as pkl
+
+    k=10
+    rw_sampler = RandomWalkSampler(k, betas=[1.0 / math.e], homeward_bound=False)
+    train = seqs_to_array([rw_sampler.gen_sequence(25) for _ in xrange(1000)],
+                          vocab = range(k**2))
+    dev = seqs_to_array([rw_sampler.gen_sequence(25) for _ in xrange(1000)],
+                       vocab = range(k**2))
+    test = seqs_to_array([rw_sampler.gen_sequence(25) for _ in xrange(1000)],
+                        vocab = range(k**2))
+    with open('data/random-walk-train.pkl', 'w') as f:
+        pkl.dump(train, f)
+    with open('data/random-walk-dev.pkl', 'w') as f:
+        pkl.dump(dev, f)
+    with open('data/random-walk-test.pkl', 'w') as f:
+        pkl.dump(test, f)
+

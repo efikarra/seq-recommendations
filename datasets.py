@@ -1,9 +1,22 @@
 """
 Datasets parsing and splitting into train/test sets
 """
+from keras.preprocessing.sequence import pad_sequences
+from keras.utils import to_categorical
 import pandas as pd
 import numpy as np
 import random
+
+
+def seqs_to_array(seqs, vocab=None):
+    padded = pad_sequences(seqs)
+    if vocab is None:
+        num_classes = np.max(padded)+1
+    else:
+        num_classes = len(vocab)
+    categorical = to_categorical(padded, num_classes=num_classes)
+    categorical = categorical.reshape((padded.shape[0], padded.shape[1], num_classes))
+    return categorical
 
 
 def remove_short_seqs(seqs, min_seq_length=1):
@@ -357,8 +370,8 @@ def load_reddit_data(eliminate_repeats=False):
     return seqs, vocab
 
 
-def reddit_generator(filename, batch_size=100, n_seqs=100,with_xs=True,
-                     with_x=True):
+def reddit_generator(filename, eliminate_repeats, batch_size=100,
+                     n_seqs=100,with_xs=True, with_x=True):
     from keras.utils import np_utils
     from keras.preprocessing.sequence import pad_sequences
     import cPickle

@@ -1,203 +1,92 @@
-import numpy as np
-import matplotlib
-matplotlib.use('agg',warn=False, force=True)
-import matplotlib.pyplot as plt
-epsilon=10e-8
+"""Custom Keras layers/objects"""
+from keras.layers import Recurrent
+from keras import backend as K
+from keras.engine import InputSpec
+from keras.engine.topology import Layer
+from keras.constraints import Constraint
 
 
-def chop_sequences(seqs, offset=200):
-    chooped_seqs = []
-    for seq in seqs:
-        chooped_seqs.append(seq[:offset])
-    return chooped_seqs
+def softmax_numerator(x):
+    return K.exp(x - K.max(x, axis=-1, keepdims=True))
 
 
-def plot(values, colors, labels, ylabel, xlabel, save_path="test_fig"):
-    for i,vals in enumerate(values):
-        plt.plot(vals, color=colors[i], label=labels[i])
-    plt.ylabel(ylabel)
-    plt.xlabel(xlabel)
-    plt.legend(loc='upper right')
-    plt.savefig(save_path)
-    plt.close()
+def normalize(x):
+    return x / K.sum(x, axis=-1, keepdims=True)
 
 
-def rank_plot(seqs, vocab, title="flickr data", save_path=None):
-    alpha=multinomial_probabilities(seqs, len(vocab), k=1.0, normalize=False)
-    alpha.sort(axis=1)
-    alpha = alpha[:,::-1]
-    plt.xlabel("state")
-    plt.ylabel("frequency")
-    plt.title(title)
-    plt.bar(range(len(vocab)),alpha[0,:])
-    if save_path is None:
-        plt.show()
+def linear(tensor):
+    return tensor
+
+
+def log(tensor):
+    return K.log(tensor+1)
+
+
+def binary(tensor):
+    return K.cast(tensor > 0, dtype='float32')
+
+
+def get_method(method_name):
+    if method_name == 'count':
+        return linear
+    elif method_name == 'log-count':
+        return log
+    elif method_name == 'binary':
+        return binary
     else:
-        plt.savefig(save_path)
-    plt.close()
+        raise AttributeError('Invalid Accumulator Method: %s' % method_name)
 
 
-def random_walk_animation(rw_sampler, path):
-    """Animate a random walk
-    
-    args:
-        rw_sampler. A random walk sampler object
-    """
-    import matplotlib.animation as animation
-
-    n_steps = 20 # Number of iterations to animate
-    sample_gen = rw_sampler.gen_sample()
-    k = rw_sampler.k
-    
-    def data_gen():
-        yield rw_sampler.pos, rw_sampler.x
-        for _ in xrange(n_steps):
-            next(sample_gen)
-            yield rw_sampler.pos, rw_sampler.x
-
-    def init():
-        rw_sampler.reset()
-        ax.set_xlim(0, k - 1)
-        ax.set_ylim(0, k - 1)
-        ax.set_title('beta = -0.1')
-
-    def run(data):
-        pos, x = data
-        for i in xrange(k):
-            for j in xrange(k):
-                ax.plot(i, j, color = 'white', marker='o')
-        ax.plot(pos[0], pos[1], color='black', marker='x')
-
-    fig, ax = plt.subplots()
-    ax.grid()
-
-    ani = animation.FuncAnimation(fig, run, data_gen, init_func=init,
-                                  interval=100, repeat=False)
-    ani.save(path)
-
-
-def multinomial_probabilities(seqs, n, k=1.0, normalize=True):
-    """Learn multinomial probabilities from sequences
-
-        Args:
-            seqs: Contains sequences to learn from.
-            n: number of states.
-
-        Returns:
-            alpha: Probabilities vector in the form of an np.array.
-        """
-    alpha = np.zeros((1, n))
-    # Fill with counts
-    for seq in seqs:
-        for s in seq:
-            alpha[0, s] = alpha[0, s] + 1
-    # Normalize
-    z = np.sum(alpha, axis=1)
-    alpha = (alpha + k)
-    if normalize:
-        alpha = alpha / (z + n * k)
-    return alpha
-
-
-def transition_matrix(seqs, n, k=0, freq=False, end_state=True):
-    """Learn global Markov transition matrix from sequences
+class Accumulator(Recurrent):
+    """Accumulates inputs
 
     Args:
-        seqs: Contains sequences to learn from.
-        vocab: Words in sequences.
-        k: Smoothing parameter from Dirchlet prior.
-        prob: If True then matrix returned is transition probabilities,
-            otherwise transition counts are returned.
-        end_state: If True then adds a token for the end state.
-
-    Returns:
-        T: Transition matrix in the form of an np.array.
+        method: Can be 'count', 'log-count', 'binary'.
     """
-    if end_state:
-        alpha = np.zeros((n, n + 1))  # Note: +1 for end_token
-    else:
-        alpha = np.zeros((n, n))
-    gamma = np.zeros(n)
-    # Fill with counts
-    for seq in seqs:
-        if len(seq) > 1:
-            for i, j in zip(seq[:-1], seq[1:]):
-                alpha[i, j] = alpha[i, j] + 1
-            if end_state:
-                alpha[j, n] = alpha[j, n] + 1
-        else:
-            if end_state:
-                alpha[seq[0], n] = alpha[seq[0], n] + 1
-        gamma[seq[0]] = gamma[seq[0]] + 1
-    smoothed_alpha = (alpha + k)
-    smoothed_gamma= (gamma + k)
-    if not freq:
-        z = np.sum(alpha, axis=1).reshape((n, 1))
-        smoothed_alpha /= (z + n * k)
-        smoothed_gamma /= (np.sum(gamma)+n * k)
-    return smoothed_alpha, smoothed_gamma
+    def __init__(self, method, **kwargs):
+        super(Accumulator, self).__init__(**kwargs)
+        self.trainable = False
+        self.method = get_method(method)
+        self.input_spec = [InputSpec(ndim=3)]
+
+    def build(self, input_shape):
+        if isinstance(input_shape, list):
+            input_shape = input_shape[0]
+        self.input_dim = input_shape[2]
+        self.units = self.input_dim
+        self.input_spec[0] = InputSpec(shape=(None, None, self.input_dim))
+        self.states = [None]
+        self.built = True
+
+    def preprocess_input(self, inputs, training=None):
+        return inputs
+
+    def step(self, inputs, states):
+        prev_output = states[0]
+        new_state = inputs + prev_output
+        output = self.method(new_state)
+        return output, [new_state]
+
+    def get_config(self):
+        config = {'method': self.method.__name__}
+        base_config = super(Accumulator, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
-def neg_log_likelihood(probs):
-    return -np.sum(np.log(probs))
+class Markov(Layer):
+    """Applies matrix multiplication"""
+    def __init__(self, transition_matrix, **kwargs):
+        super(Markov, self).__init__(**kwargs)
+        self.trainable = False
+        self.transition_matrix = K.variable(transition_matrix)
+
+    def call(self, x):
+        return K.dot(x, self.transition_matrix)
 
 
-def compute_likelihood_cut(predictions, train_percent, orig_lengths=None, count_first_prob=False):
-    assert train_percent <= 1.0, "ERROR: train_percent should be <= 1.0"
-    train_lls=[]
-    val_lls=[]
-    for i,pred in enumerate(predictions):
-        sort_pred=pred[:]
-        if not count_first_prob:
-            sort_pred=sort_pred[1:]
-        if orig_lengths is not None:
-            sort_pred=pred[-int(orig_lengths[i]):]
-        seq_length = len(sort_pred)
-        train_elems = int(np.ceil(train_percent * seq_length))
-        val_elems = int(np.floor((1.0-train_percent) * seq_length))
-        if train_elems > 0:
-            train_lls.append(neg_log_likelihood(sort_pred[0:train_elems])/train_elems)
-        if val_elems>0 :
-            val_lls.append(neg_log_likelihood(sort_pred[-val_elems:])/val_elems)
-
-    return np.sum(train_lls)/len(train_lls),np.sum(val_lls)/len(val_lls)
-
-
-def compute_likelihood(predictions, count_first_prob=False):
-    epsilon=1e-07
-    #np.clip(predictions, epsilon, 1-epsilon)
-    lls=[]
-    for i,pred in enumerate(predictions):
-        sort_pred=pred[:]
-        if not count_first_prob:
-            sort_pred=sort_pred[1:]
-        sort_pred=np.clip(sort_pred,epsilon,1.0-epsilon)
-        if len(sort_pred)>0:
-            lls.append(neg_log_likelihood(sort_pred)/len(sort_pred))
-
-    return np.mean(lls)
-
-
-def compute_unique_elements(seqs):
-    unique_elems=set()
-    for seq in seqs:
-        for s in seq:
-            unique_elems.add(s)
-    return len(unique_elems)
-
-
-def compute_seq_max_length(seqs):
-    max_seq_length=0
-    for seq in seqs:
-        if len(seq)>max_seq_length:
-            max_seq_length=len(seq)
-    return max_seq_length
-
-
-def sample_weights(alpha,sigma):
-    samples=np.zeros(alpha.shape)
-    for i in range(alpha.shape[0]):
-        for j in range(alpha.shape[1]):
-            samples[i,j]=np.random.normal(alpha[i,j], sigma, 1)
-    return samples
+class ForceDiagonal(Constraint):
+    """Forces weight matrix to be diagonal"""
+    def __call__(self, w):
+        w *= K.eye(w.shape[0])
+        return w
 

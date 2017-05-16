@@ -121,7 +121,7 @@ def build_seqs_from_df(df, group_col, seq_col, sort_col):
 
 def load_flickr_data_df():
     """Load Flickr dataset.
-        returns: 
+        returns:
             data_table: pandas DataFrame.
             stats: pandas DataFrame with dataset statistics
         """
@@ -130,10 +130,10 @@ def load_flickr_data_df():
     vocab = dict(zip(unique_vals, range(len(unique_vals))))
     df["poiID"].replace(vocab, inplace=True)
     seqs = build_seqs_from_df(df, "userID", "poiID", "startTime")
-    return seqs,vocab
+    return seqs, vocab
 
 
-def load_flickr_data(gap_thresh=30):
+def load_flickr_data(eliminate_repeats=False, gap_thresh=30):
     """Loads flickr dataset.
 
     args:
@@ -166,7 +166,6 @@ def load_flickr_data(gap_thresh=30):
             curr_start = datetime.fromtimestamp(int(vals[3]))
             curr_end = datetime.fromtimestamp(int(vals[4]))
 
-
             if uid != active_uid: # New user logic
                 try:
                     seqs.append(active_seq)
@@ -175,6 +174,7 @@ def load_flickr_data(gap_thresh=30):
                 active_seq = []
                 active_uid = uid
                 prev_end = curr_end
+                prev_token = None
 
             # Handle gaps
             time_diff = (curr_start - prev_end).total_seconds() / 60
@@ -185,13 +185,18 @@ def load_flickr_data(gap_thresh=30):
                 vocab[token] = vocab_id
                 vocab_id += 1
 
-            active_seq.append(vocab[token])
+            if eliminate_repeats and token != prev_token:
+                active_seq.append(vocab[token])
+                prev_token = token
+            elif not eliminate_repeats:
+                active_seq.append(vocab[token])
+
             prev_end = curr_end
 
     return seqs, vocab
 
 
-def load_msnbc_data():
+def load_msnbc_data(eliminate_repeats=False):
     """Loads MSNBC dataset.
 
     Note: This data comes in the form of a list of sequences, so no
@@ -202,23 +207,27 @@ def load_msnbc_data():
     """
     vocab_id = 0
     vocab = dict()
-
     seqs = []
     with open('data/msnbc-data.txt', 'r') as f:
         for i, line in enumerate(f):
             if i>7:
-                seq = []
-                vals = line.split()
-                for val in vals:
-                    if val not in vocab:
-                        vocab[val] = vocab_id
+                active_seq = []
+                tokens = line.split()
+                prev_token = None
+                for token in tokens:
+                    if token not in vocab:
+                        vocab[token] = vocab_id
                         vocab_id += 1
-                    seq.append(vocab[val])
-                seqs.append(seq)
+                    if eliminate_repeats and token != prev_token:
+                        active_seq.append(vocab[token])
+                        prev_token = token
+                    elif not eliminate_repeats:
+                        active_seq.append(vocab[token])
+                seqs.append(active_seq)
         return seqs, vocab
 
 
-def load_gowalla_data(n_seq=None, bounding_box=None):
+def load_gowalla_data(n_seq=None, bounding_box=None, eliminate_repeats=False):
     """Loads Gowalla dataset.
 
     Note: This dataset is typically too large to store in memory. Use the
@@ -245,7 +254,7 @@ def load_gowalla_data(n_seq=None, bounding_box=None):
         for line in f:
             # Parse data
             vals = line.split('\t')
-            uid, loc = vals[0], vals[-1]
+            uid, token = vals[0], vals[-1]
             lat, lon = float(vals[2]), float(vals[3])
 
             # Check if enough data has been read
@@ -268,15 +277,19 @@ def load_gowalla_data(n_seq=None, bounding_box=None):
                     active_seq = []
                     active_uid = uid
                     seq_count += 1
-                if loc not in vocab:
-                    vocab[loc] = vocab_id
+                    prev_token = None
+                if token not in vocab:
+                    vocab[token] = vocab_id
                     vocab_id += 1
-                active_seq.append(vocab[loc])
-
+                if eliminate_repeats and token != prev_token:
+                    active_seq.append(vocab[token])
+                    prev_token = token
+                elif not eliminate_repeats:
+                    active_seq.append(vocab[token])
     return seqs, vocab
 
 
-def load_student_data(gap_thresh=30):
+def load_student_data(eliminate_repeats=False, gap_thresh=30):
     """Loads student activity dataset.
 
     args:
@@ -290,10 +303,8 @@ def load_student_data(gap_thresh=30):
 
     vocab_id = 1
     vocab = {'gap': 0} # 0 is the gap token
-
     seqs = []
     active_uid = None
-
     with open('data/student-data.txt', 'r') as f:
         for line in f:
             # Parse data
@@ -301,7 +312,6 @@ def load_student_data(gap_thresh=30):
             vals = line.split(',')
             uid, dt, ts, token = vals
             curr_datetime = parse(dt+'T'+ts+'Z')
-
             if uid != active_uid: # New user logic
                 try:
                     seqs.append(active_seq)
@@ -310,19 +320,20 @@ def load_student_data(gap_thresh=30):
                 active_seq = []
                 active_uid = uid
                 prev_datetime = curr_datetime
-
+                prev_token = None
             # Handle gaps
             time_diff = (curr_datetime - prev_datetime).seconds / 60
             if time_diff > gap_thresh:
                 active_seq.append(vocab['gap'])
-
             if token not in vocab:
                 vocab[token] = vocab_id
                 vocab_id += 1
-
-            active_seq.append(vocab[token])
+            if eliminate_repeats and token != prev_token:
+                active_seq.append(vocab[token])
+                prev_token = token
+            elif not eliminate_repeats:
+                active_seq.append(vocab[token])
             prev_datetime = curr_datetime
-
     return seqs, vocab
 
 
@@ -332,7 +343,6 @@ def load_reddit_data(eliminate_repeats=False):
     vocab = dict()
     seqs = []
     active_uid = None
-    prev_token = None
     with open('data/reddit-data.csv', 'r') as f:
         for line in f:
             vals = line.split(',')
@@ -345,6 +355,7 @@ def load_reddit_data(eliminate_repeats=False):
                     pass
                 active_seq = []
                 active_uid = uid
+                prev_token = None
             # Logic applied to all lines
             if token not in vocab:
                 vocab[token] = vocab_id
@@ -370,7 +381,7 @@ def reddit_generator(filename, batch_size=100, n_seqs=100,with_xs=True,
     while 1:
         with open(filename, 'r') as f:
             l=0
-            for i,line in enumerate(f):
+            for i, line in enumerate(f):
                 print i,l
                 l+=1
                 seqs.append(map(int, line.split(",")))

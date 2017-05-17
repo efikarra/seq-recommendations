@@ -72,7 +72,7 @@ if __name__ == '__main__':
 
     if 'reddit' in args.dataset:
         print 'Downloading reddit dataset'
-        url = 'https://www.dropbox.com/s/n5yafb040upm16f/reddit-data.tar.gz?dl=1'
+        url = 'https://www.dropbox.com/s/uimb58b1ot11kf4/reddit-data.tar.gz?dl=1'
         dest = 'data/'
         download_targz(url, dest)
         print 'Download complete\n'

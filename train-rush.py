@@ -25,15 +25,22 @@ def generate_transition_matrix(k):
 
 def create_samples(dataset_size, k):
     from datasets import seqs_to_array
-    from sampler import RandomWalkSampler
-    import math
-    rw_sampler = RandomWalkSampler(k, betas=[math.e], homeward_bound=False)
     out = seqs_to_array([rw_sampler.gen_sequence(25) for _ in
                          xrange(dataset_size)], vocab = range(k**2))
     return out
 
 
 if __name__ == '__main__':
+    import time
+    import cPickle
+    import math
+    from sampler import RandomWalkSampler
+    k = 10
+    rw_sampler = RandomWalkSampler(k, betas=[math.e, 1./math.e], homeward_bound=False)
+
+    with open('./data/sampler.pkl', 'wb') as pkl:
+        cPickle.dump(rw_sampler, pkl)
+
     # import argparse
     # parser = argparse.ArgumentParser()
     # args = parser.parse_args()
@@ -48,23 +55,32 @@ if __name__ == '__main__':
 
     transition_matrix = generate_transition_matrix(10)
 
+    from keras.callbacks import EarlyStopping
+
+    callback = EarlyStopping(monitor='val_loss', patience=25)
+    test = create_samples(10000, 10)
+
     for dataset_size in [10, 100, 1000, 10000, 100000]:
-        dev = create_samples(dataset_size, 10)
         train = create_samples(dataset_size, 10)
+        dev = create_samples(dataset_size, 10)
 
         # Markov + X
-        name = 'MARKOV-X'
+        name = 'MC-SI'
         model = build_model(shape=(train.shape[1] - 1, train.shape[2]),
                             transition_matrix=transition_matrix,
                             accumulator_method='count',
                             z_dim=None)
         model.compile(optimizer='adam', loss='categorical_crossentropy')
+        t_start = time.time()
         hist = model.fit(x=train[:,:-1,:],
-                  y=train[:,1:,:],
-                  batch_size=min([dataset_size, 100]),
-                  epochs=500,
-                  validation_data=(dev[:,:-1,:], dev[:,1:,:]),
-                  shuffle=True)
+                         y=train[:,1:,:],
+                         batch_size=min([dataset_size, 100]),
+                         epochs=1000,
+                         validation_data=(dev[:,:-1,:], dev[:,1:,:]),
+                         shuffle=True,
+                         callbacks=[callback])
+        t_end = time.time()
+        test_loss = model.test_on_batch(x=test[:,:-1,:], y=test[:,1:,:])
         model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
         with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
@@ -75,23 +91,29 @@ if __name__ == '__main__':
             line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_valid.txt', 'a') as log:
-            loss_seq = str(hist.history['val_loss'][-1])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s-%i\t%s\n' % (name, dataset_size, test_loss)
+            log.write(line)
+        with open('data/saved-models/RUSH_time.txt', 'a') as log:
+            line = '%s-%i\t%0.3f\n' % (name, dataset_size, t_start - t_end)
             log.write(line)
 
         # Markov + Z=2
-        name = 'MARKOV-Z=2'
+        name = 'MC-RNN(2)'
         model = build_model(shape=(train.shape[1] - 1, train.shape[2]),
                             transition_matrix=transition_matrix,
                             accumulator_method=None,
                             z_dim=2)
         model.compile(optimizer='adam', loss='categorical_crossentropy')
+        t_start = time.time()
         hist = model.fit(x=train[:,:-1,:],
-                  y=train[:,1:,:],
-                  batch_size=min([dataset_size, 100]),
-                  epochs=500,
-                  validation_data=(dev[:,:-1,:], dev[:,1:,:]),
-                  shuffle=True)
+                         y=train[:,1:,:],
+                         batch_size=min([dataset_size, 100]),
+                         epochs=1000,
+                         validation_data=(dev[:,:-1,:], dev[:,1:,:]),
+                         shuffle=True,
+                         callbacks=[callback])
+        t_end = time.time()
+        test_loss = model.test_on_batch(x=test[:,:-1,:], y=test[:,1:,:])
         model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
         with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
@@ -102,23 +124,29 @@ if __name__ == '__main__':
             line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_valid.txt', 'a') as log:
-            loss_seq = str(hist.history['val_loss'][-1])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s-%i\t%s\n' % (name, dataset_size, test_loss)
+            log.write(line)
+        with open('data/saved-models/RUSH_time.txt', 'a') as log:
+            line = '%s-%i\t%0.3f\n' % (name, dataset_size, t_start - t_end)
             log.write(line)
 
         # Markov + Z=10
-        name = 'MARKOV-Z=10'
+        name = 'MC-RNN(10)'
         model = build_model(shape=(train.shape[1] - 1, train.shape[2]),
                             transition_matrix=transition_matrix,
                             accumulator_method=None,
                             z_dim=10)
         model.compile(optimizer='adam', loss='categorical_crossentropy')
+        t_start = time.time()
         hist = model.fit(x=train[:,:-1,:],
-                  y=train[:,1:,:],
-                  batch_size=min([dataset_size, 100]),
-                  epochs=500,
-                  validation_data=(dev[:,:-1,:], dev[:,1:,:]),
-                  shuffle=True)
+                         y=train[:,1:,:],
+                         batch_size=min([dataset_size, 100]),
+                         epochs=1000,
+                         validation_data=(dev[:,:-1,:], dev[:,1:,:]),
+                         shuffle=True,
+                         callbacks=[callback])
+        t_end = time.time()
+        test_loss = model.test_on_batch(x=test[:,:-1,:], y=test[:,1:,:])
         model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
         with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
@@ -129,7 +157,9 @@ if __name__ == '__main__':
             line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_valid.txt', 'a') as log:
-            loss_seq = str(hist.history['val_loss'][-1])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s-%i\t%s\n' % (name, dataset_size, test_loss)
+            log.write(line)
+        with open('data/saved-models/RUSH_time.txt', 'a') as log:
+            line = '%s-%i\t%0.3f\n' % (name, dataset_size, t_start - t_end)
             log.write(line)
 

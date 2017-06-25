@@ -163,7 +163,7 @@ class RandomWalkSampler(SequenceSampler):
     def gen_sample(self):
         while True:
             u, v = self.pos # Initial location
-            self.x[u][v] += 1 # Note that agent has visited
+            self.x[u][v] = 1 # Note that agent has visited
 
             # Calculate local pdf
             neighbors = self._get_neighbors()

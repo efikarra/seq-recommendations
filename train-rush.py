@@ -36,7 +36,7 @@ if __name__ == '__main__':
     import math
     from sampler import RandomWalkSampler
     k = 10
-    rw_sampler = RandomWalkSampler(k, betas=[math.e, 1./math.e], homeward_bound=False)
+    rw_sampler = RandomWalkSampler(k, betas=[10., 1./10], homeward_bound=False)
 
     with open('./data/sampler.pkl', 'wb') as pkl:
         cPickle.dump(rw_sampler, pkl)
@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     from keras.callbacks import EarlyStopping
 
-    callback = EarlyStopping(monitor='val_loss', patience=25)
+    callback = EarlyStopping(monitor='val_loss', patience=10)
     test = create_samples(10000, 10)
 
     for dataset_size in [10, 100, 1000, 10000, 100000]:
@@ -68,7 +68,7 @@ if __name__ == '__main__':
         name = 'MC-SI'
         model = build_model(shape=(train.shape[1] - 1, train.shape[2]),
                             transition_matrix=transition_matrix,
-                            accumulator_method='count',
+                            accumulator_method='binary',
                             z_dim=None)
         model.compile(optimizer='adam', loss='categorical_crossentropy')
         t_start = time.time()
@@ -84,17 +84,17 @@ if __name__ == '__main__':
         model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
         with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_dev_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['val_loss'])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_valid.txt', 'a') as log:
-            line = '%s-%i\t%s\n' % (name, dataset_size, test_loss)
+            line = '%s %i\t%s\n' % (name, dataset_size, test_loss)
             log.write(line)
         with open('data/saved-models/RUSH_time.txt', 'a') as log:
-            line = '%s-%i\t%0.3f\n' % (name, dataset_size, t_start - t_end)
+            line = '%s %i\t%0.3f\n' % (name, dataset_size, t_end - t_start)
             log.write(line)
 
         # Markov + Z=2
@@ -117,17 +117,17 @@ if __name__ == '__main__':
         model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
         with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_dev_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['val_loss'])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_valid.txt', 'a') as log:
-            line = '%s-%i\t%s\n' % (name, dataset_size, test_loss)
+            line = '%s %i\t%s\n' % (name, dataset_size, test_loss)
             log.write(line)
         with open('data/saved-models/RUSH_time.txt', 'a') as log:
-            line = '%s-%i\t%0.3f\n' % (name, dataset_size, t_start - t_end)
+            line = '%s %i\t%0.3f\n' % (name, dataset_size, t_end - t_start)
             log.write(line)
 
         # Markov + Z=10
@@ -150,16 +150,50 @@ if __name__ == '__main__':
         model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
         with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_dev_log.txt', 'a') as log:
             loss_seq = ' '.join(str(loss) for loss in hist.history['val_loss'])
-            line = '%s-%i\t%s\n' % (name, dataset_size, loss_seq)
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
             log.write(line)
         with open('data/saved-models/RUSH_valid.txt', 'a') as log:
-            line = '%s-%i\t%s\n' % (name, dataset_size, test_loss)
+            line = '%s %i\t%s\n' % (name, dataset_size, test_loss)
             log.write(line)
         with open('data/saved-models/RUSH_time.txt', 'a') as log:
-            line = '%s-%i\t%0.3f\n' % (name, dataset_size, t_start - t_end)
+            line = '%s %i\t%0.3f\n' % (name, dataset_size, t_end - t_start)
+            log.write(line)
+
+        # Markov + Z=100
+        name = 'MC-RNN(100)'
+        model = build_model(shape=(train.shape[1] - 1, train.shape[2]),
+                            transition_matrix=transition_matrix,
+                            accumulator_method=None,
+                            z_dim=100)
+        model.compile(optimizer='adam', loss='categorical_crossentropy')
+        t_start = time.time()
+        hist = model.fit(x=train[:,:-1,:],
+                         y=train[:,1:,:],
+                         batch_size=min([dataset_size, 100]),
+                         epochs=1000,
+                         validation_data=(dev[:,:-1,:], dev[:,1:,:]),
+                         shuffle=True,
+                         callbacks=[callback])
+        t_end = time.time()
+        test_loss = model.evaluate(x=test[:,:-1,:], y=test[:,1:,:],
+                                   batch_size=1000)
+        model.save_weights('data/saved-models/%s-%i.hdf5' % (name, dataset_size))
+        with open('data/saved-models/RUSH_training_log.txt', 'a') as log:
+            loss_seq = ' '.join(str(loss) for loss in hist.history['loss'])
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
+            log.write(line)
+        with open('data/saved-models/RUSH_dev_log.txt', 'a') as log:
+            loss_seq = ' '.join(str(loss) for loss in hist.history['val_loss'])
+            line = '%s %i\t%s\n' % (name, dataset_size, loss_seq)
+            log.write(line)
+        with open('data/saved-models/RUSH_valid.txt', 'a') as log:
+            line = '%s %i\t%s\n' % (name, dataset_size, test_loss)
+            log.write(line)
+        with open('data/saved-models/RUSH_time.txt', 'a') as log:
+            line = '%s %i\t%0.3f\n' % (name, dataset_size, t_end - t_start)
             log.write(line)
 
